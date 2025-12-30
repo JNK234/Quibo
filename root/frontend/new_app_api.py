@@ -711,6 +711,7 @@ class ProjectHubUI:
         """
         Permanently deletes a project from Supabase.
         """
+        logger.info(f"DELETE FUNCTION CALLED: project_id={project_id}, api_base_url={api_base_url}")
         try:
             with st.spinner(f"Deleting project..."):
                 # Call the v2 API endpoint for permanent deletion
@@ -729,7 +730,19 @@ class ProjectHubUI:
                     st.success("Project deleted successfully!")
                     st.rerun()
                 else:
-                    st.error(f"Failed to delete project: {response.get('message', 'Unknown error')}")
+                    # Handle specific error cases with user-friendly messages
+                    error_code = response.get('error_code')
+                    error_message = response.get('message', 'Unknown error')
+
+                    if error_code == 'PROJECT_NOT_FOUND':
+                        st.warning(error_message)
+                        # Clear the stale project from UI
+                        st.session_state[f"confirm_delete_{project_id}"] = False
+                        st.rerun()
+                    elif error_code == 'FORBIDDEN':
+                        st.error(error_message)
+                    else:
+                        st.error(f"Failed to delete project: {error_message}")
 
         except Exception as e:
             st.error(f"Error deleting project: {str(e)}")
@@ -739,14 +752,47 @@ class ProjectHubUI:
         """Async helper to delete project via API."""
         import httpx
         from utils.auth import get_auth_headers
+        logger.info(f"DELETE: Starting delete for project_id={project_id}, api_base_url={api_base_url}")
         headers = get_auth_headers(target_audience=api_base_url)
+        logger.info(f"DELETE: Headers={headers}")
+        url = f"{api_base_url}/api/v2/projects/{project_id}"
+        logger.info(f"DELETE: Full URL={url}")
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.delete(
-                f"{api_base_url}/api/v2/projects/{project_id}",
-                params={"permanent": "true"},
+                url,
+                params={"permanent": True},  # Boolean not string
                 headers=headers
             )
-            response.raise_for_status()
+            logger.info(f"DELETE: Response status={response.status_code}, body={response.text[:200]}")
+
+            # Handle specific error cases
+            if response.status_code == 404:
+                return {
+                    'status': 'error',
+                    'message': 'Project not found. It may have already been deleted or does not exist.',
+                    'error_code': 'PROJECT_NOT_FOUND'
+                }
+            elif response.status_code == 403:
+                return {
+                    'status': 'error',
+                    'message': 'You do not have permission to delete this project.',
+                    'error_code': 'FORBIDDEN'
+                }
+            elif response.status_code >= 400:
+                error_msg = f"Server error (HTTP {response.status_code})"
+                try:
+                    error_data = response.json()
+                    if 'detail' in error_data:
+                        error_msg = error_data['detail']
+                except:
+                    pass
+                return {
+                    'status': 'error',
+                    'message': error_msg,
+                    'error_code': f'HTTP_{response.status_code}'
+                }
+
+            # Only successful responses proceed here
             return response.json()
 
 class SidebarUI:
@@ -1496,7 +1542,9 @@ class BlogDraftUI:
         col1, col2 = st.columns([3, 1])
         
         with col1:
-            st.progress(current_section_index / total_sections if total_sections > 0 else 0)
+            # Clamp progress value to ensure it never exceeds 1.0
+            progress_value = min(current_section_index / total_sections, 1.0) if total_sections > 0 else 0
+            st.progress(progress_value)
             st.write(f"Progress: {current_section_index}/{total_sections} sections generated.")
         
         with col2:
@@ -2336,8 +2384,10 @@ class BloggingAssistantAPIApp:
                         else:
                             st.metric("Time", "0h 0m")
 
-                    # Progress bar
-                    st.progress(progress_data.get('progress_percentage', 0) / 100)
+                    # Progress bar - clamp value to ensure it never exceeds 1.0
+                    progress_percentage = progress_data.get('progress_percentage', 0)
+                    progress_value = min(progress_percentage / 100, 1.0)
+                    st.progress(progress_value)
 
                 except Exception as e:
                     logger.debug(f"Failed to load project progress: {e}")

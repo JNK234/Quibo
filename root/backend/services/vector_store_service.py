@@ -97,7 +97,7 @@ class VectorStoreService:
                     }
                 else:
                     where = metadata_filter
-                logging.debug(f"Using metadata filter: {where}")
+                logging.info(f"Using metadata filter: {where}")
 
             if query:
                 results = self.collection.query(
@@ -113,10 +113,12 @@ class VectorStoreService:
                     where=where if where else None
                     # Removed limit=n_results when fetching by metadata only to ensure all chunks are retrieved
                 )
+                logging.info(f"Collection get results: documents={bool(results.get('documents')) if results else 'None results'}, ids={len(results.get('ids', [])) if results else 0}")
                 if results and results["documents"]:
                     documents = results["documents"]
                     metadatas = results["metadatas"]
                     distances = [0.0] * len(documents)
+                    logging.info(f"Found {len(documents)} documents with filter")
                 else:
                     documents = []
                     metadatas = []

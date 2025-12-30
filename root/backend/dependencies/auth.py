@@ -20,7 +20,12 @@ if not supabase_url or not supabase_key:
     raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY must be set")
 
 supabase_client = create_client(supabase_url, supabase_key)
+
+# Standard security (requires auth, returns 403 if missing)
 security = HTTPBearer()
+
+# Optional security (allows requests without auth header)
+optional_security = HTTPBearer(auto_error=False)
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
     """
@@ -70,7 +75,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             detail="Authentication system error"
         )
 
-async def get_optional_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> Optional[Dict[str, Any]]:
+async def get_optional_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security)) -> Optional[Dict[str, Any]]:
     """
     Dependency that attempts to validate token but returns None instead of 401 if invalid.
 

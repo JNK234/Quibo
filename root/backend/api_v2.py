@@ -15,10 +15,17 @@ import uuid
 import logging
 import os
 
-from backend.services.supabase_project_manager import SupabaseProjectManager, MilestoneType, ProjectStatus, SectionStatus
+from backend.services.supabase_project_manager import (
+    SupabaseProjectManager,
+    MilestoneType,
+    ProjectStatus,
+    SectionStatus,
+)
 from backend.services.cost_aggregator import CostAggregator
 from backend.agents.outline_generator.state import FinalOutline
 from backend.utils.serialization import serialize_object
+from backend.dependencies.auth import get_optional_user
+from fastapi import Depends
 
 logger = logging.getLogger("APIv2")
 
@@ -31,13 +38,17 @@ cost_aggregator = CostAggregator()
 
 # ==================== Pydantic Models ====================
 
+
 class ProjectCreate(BaseModel):
     """Project creation request."""
+
     name: str = Field(..., description="Project name")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
+
 class SectionUpdate(BaseModel):
     """Section update model."""
+
     section_index: int
     title: Optional[str] = None
     content: Optional[str] = None
@@ -46,8 +57,10 @@ class SectionUpdate(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
 
+
 class CostTrackRequest(BaseModel):
     """Cost tracking request."""
+
     agent_name: str
     operation: str
     input_tokens: int
@@ -56,16 +69,23 @@ class CostTrackRequest(BaseModel):
     model_used: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
+
 class MilestoneData(BaseModel):
     """Milestone data model."""
+
     type: str
     data: Any
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
+
 # ==================== Project CRUD Endpoints ====================
 
+
 @router.post("/projects")
-async def create_project(request: Request, project_data: ProjectCreate) -> JSONResponse:
+async def create_project(
+    project_data: ProjectCreate,
+    user: Optional[Dict[str, Any]] = Depends(get_optional_user),
+) -> JSONResponse:
     """
     Create a new project with unique ID.
 
@@ -73,26 +93,28 @@ async def create_project(request: Request, project_data: ProjectCreate) -> JSONR
         Project ID and details
     """
     try:
-        # Get authenticated user from request state (set by auth middleware)
-        user = getattr(request.state, 'user', None)
-        user_id = user.get('id') if user else None
-        
+        # Extract user ID from JWT token (sub is standard JWT subject claim)
+        user_id = user.get("sub") if user else None
+
         project_id = await sql_manager.create_project(
             project_name=project_data.name,
             metadata=project_data.metadata,
-            user_id=user_id  # Pass authenticated user ID for RLS
+            user_id=user_id,  # Pass authenticated user ID for RLS
         )
 
-        return JSONResponse(content={
-            "status": "success",
-            "project_id": project_id,
-            "name": project_data.name,
-            "message": f"Project created successfully"
-        })
+        return JSONResponse(
+            content={
+                "status": "success",
+                "project_id": project_id,
+                "name": project_data.name,
+                "message": f"Project created successfully",
+            }
+        )
 
     except Exception as e:
         logger.error(f"Failed to create project: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/projects")
 async def list_projects(status: Optional[str] = None) -> JSONResponse:
@@ -131,17 +153,20 @@ async def list_projects(status: Optional[str] = None) -> JSONResponse:
 
             enriched_projects.append(project)
 
-        return JSONResponse(content={
-            "status": "success",
-            "projects": enriched_projects,
-            "count": len(enriched_projects)
-        })
+        return JSONResponse(
+            content={
+                "status": "success",
+                "projects": enriched_projects,
+                "count": len(enriched_projects),
+            }
+        )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to list projects: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/projects/{project_id}")
 async def get_project(project_id: str) -> JSONResponse:
@@ -166,7 +191,9 @@ async def get_project(project_id: str) -> JSONResponse:
         # Get all milestones
         milestones = {}
         for milestone_type in MilestoneType:
-            milestone_data = await sql_manager.load_milestone(project_id, milestone_type)
+            milestone_data = await sql_manager.load_milestone(
+                project_id, milestone_type
+            )
             if milestone_data:
                 milestones[milestone_type.value] = milestone_data
 
@@ -189,21 +216,24 @@ async def get_project(project_id: str) -> JSONResponse:
         else:
             next_step = "file_upload"
 
-        return JSONResponse(content={
-            "status": "success",
-            "project": project,
-            "progress": progress,
-            "cost_summary": cost_summary,
-            "milestones": milestones,
-            "sections": sections,
-            "next_step": next_step
-        })
+        return JSONResponse(
+            content={
+                "status": "success",
+                "project": project,
+                "progress": progress,
+                "cost_summary": cost_summary,
+                "milestones": milestones,
+                "sections": sections,
+                "next_step": next_step,
+            }
+        )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to get project {project_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.delete("/projects/{project_id}")
 async def delete_project(project_id: str, permanent: bool = False) -> JSONResponse:
@@ -218,15 +248,22 @@ async def delete_project(project_id: str, permanent: bool = False) -> JSONRespon
         Success status
     """
     try:
+        # Validate UUID format
+        try:
+            uuid.UUID(project_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid project_id format: {project_id}. Must be a valid UUID.")
+
+        logger.info(f"Delete request received: project_id={project_id}, permanent={permanent}")
         success = await sql_manager.delete_project(project_id, permanent=permanent)
+        logger.info(f"Delete result: success={success}")
         if not success:
             raise HTTPException(status_code=404, detail="Project not found")
 
         action = "permanently deleted" if permanent else "archived"
-        return JSONResponse(content={
-            "status": "success",
-            "message": f"Project {action} successfully"
-        })
+        return JSONResponse(
+            content={"status": "success", "message": f"Project {action} successfully"}
+        )
 
     except HTTPException:
         raise
@@ -234,10 +271,14 @@ async def delete_project(project_id: str, permanent: bool = False) -> JSONRespon
         logger.error(f"Failed to delete project {project_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ==================== Section Management Endpoints ====================
 
+
 @router.put("/projects/{project_id}/sections")
-async def update_sections(project_id: str, sections: List[SectionUpdate]) -> JSONResponse:
+async def update_sections(
+    project_id: str, sections: List[SectionUpdate]
+) -> JSONResponse:
     """
     Batch update all sections for a project.
 
@@ -265,20 +306,23 @@ async def update_sections(project_id: str, sections: List[SectionUpdate]) -> JSO
             input_tokens=0,
             output_tokens=0,
             cost=0.0,
-            metadata={"sections_count": len(sections)}
+            metadata={"sections_count": len(sections)},
         )
 
-        return JSONResponse(content={
-            "status": "success",
-            "sections_updated": len(sections),
-            "message": f"Successfully updated {len(sections)} sections"
-        })
+        return JSONResponse(
+            content={
+                "status": "success",
+                "sections_updated": len(sections),
+                "message": f"Successfully updated {len(sections)} sections",
+            }
+        )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to update sections for project {project_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/projects/{project_id}/sections")
 async def get_sections(project_id: str) -> JSONResponse:
@@ -295,32 +339,44 @@ async def get_sections(project_id: str) -> JSONResponse:
         sections = await sql_manager.load_sections(project_id)
 
         # Calculate section stats
-        completed = sum(1 for s in sections if s["status"] == SectionStatus.COMPLETED.value)
+        completed = sum(
+            1 for s in sections if s["status"] == SectionStatus.COMPLETED.value
+        )
         total_cost = sum(s.get("cost_delta", 0) for s in sections)
 
-        return JSONResponse(content={
-            "status": "success",
-            "sections": sections,
-            "stats": {
-                "total": len(sections),
-                "completed": completed,
-                "pending": sum(1 for s in sections if s["status"] == SectionStatus.PENDING.value),
-                "generating": sum(1 for s in sections if s["status"] == SectionStatus.GENERATING.value),
-                "failed": sum(1 for s in sections if s["status"] == SectionStatus.FAILED.value),
-                "total_cost": total_cost
+        return JSONResponse(
+            content={
+                "status": "success",
+                "sections": sections,
+                "stats": {
+                    "total": len(sections),
+                    "completed": completed,
+                    "pending": sum(
+                        1
+                        for s in sections
+                        if s["status"] == SectionStatus.PENDING.value
+                    ),
+                    "generating": sum(
+                        1
+                        for s in sections
+                        if s["status"] == SectionStatus.GENERATING.value
+                    ),
+                    "failed": sum(
+                        1 for s in sections if s["status"] == SectionStatus.FAILED.value
+                    ),
+                    "total_cost": total_cost,
+                },
             }
-        })
+        )
 
     except Exception as e:
         logger.error(f"Failed to get sections for project {project_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.patch("/projects/{project_id}/sections/{section_index}/status")
 async def update_section_status(
-    project_id: str,
-    section_index: int,
-    status: str,
-    cost_delta: Optional[float] = None
+    project_id: str, section_index: int, status: str, cost_delta: Optional[float] = None
 ) -> JSONResponse:
     """
     Update status of a specific section.
@@ -339,16 +395,18 @@ async def update_section_status(
             project_id=project_id,
             section_index=section_index,
             status=status,
-            cost_delta=cost_delta
+            cost_delta=cost_delta,
         )
 
         if not success:
             raise HTTPException(status_code=404, detail="Section not found")
 
-        return JSONResponse(content={
-            "status": "success",
-            "message": f"Section {section_index} status updated to {status}"
-        })
+        return JSONResponse(
+            content={
+                "status": "success",
+                "message": f"Section {section_index} status updated to {status}",
+            }
+        )
 
     except HTTPException:
         raise
@@ -356,7 +414,9 @@ async def update_section_status(
         logger.error(f"Failed to update section status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ==================== Cost Tracking Endpoints ====================
+
 
 @router.post("/projects/{project_id}/costs")
 async def track_cost(project_id: str, request: CostTrackRequest) -> JSONResponse:
@@ -379,22 +439,25 @@ async def track_cost(project_id: str, request: CostTrackRequest) -> JSONResponse
             output_tokens=request.output_tokens,
             cost=request.cost,
             model_used=request.model_used,
-            metadata=request.metadata
+            metadata=request.metadata,
         )
 
         if not success:
             raise HTTPException(status_code=500, detail="Failed to track cost")
 
-        return JSONResponse(content={
-            "status": "success",
-            "message": f"Cost tracked: ${request.cost:.6f}"
-        })
+        return JSONResponse(
+            content={
+                "status": "success",
+                "message": f"Cost tracked: ${request.cost:.6f}",
+            }
+        )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to track cost: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/projects/{project_id}/costs")
 async def get_cost_summary(project_id: str) -> JSONResponse:
@@ -410,14 +473,12 @@ async def get_cost_summary(project_id: str) -> JSONResponse:
     try:
         cost_summary = await sql_manager.get_cost_summary(project_id)
 
-        return JSONResponse(content={
-            "status": "success",
-            "cost_summary": cost_summary
-        })
+        return JSONResponse(content={"status": "success", "cost_summary": cost_summary})
 
     except Exception as e:
         logger.error(f"Failed to get cost summary: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/projects/{project_id}/costs/analysis")
 async def get_cost_analysis(project_id: str) -> JSONResponse:
@@ -433,16 +494,15 @@ async def get_cost_analysis(project_id: str) -> JSONResponse:
     try:
         analysis = await sql_manager.get_cost_analysis(project_id)
 
-        return JSONResponse(content={
-            "status": "success",
-            "analysis": analysis
-        })
+        return JSONResponse(content={"status": "success", "analysis": analysis})
 
     except Exception as e:
         logger.error(f"Failed to get cost analysis: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ==================== Progress and Resume Endpoints ====================
+
 
 @router.get("/projects/{project_id}/progress")
 async def get_progress(project_id: str) -> JSONResponse:
@@ -459,17 +519,20 @@ async def get_progress(project_id: str) -> JSONResponse:
         progress = await sql_manager.get_progress(project_id)
         costs = await sql_manager.get_cost_summary(project_id)
 
-        return JSONResponse(content={
-            "status": "success",
-            "overall_progress": progress["percentage"],
-            "milestones": progress["milestones"],
-            "sections": progress["sections"],
-            "cost_summary": costs
-        })
+        return JSONResponse(
+            content={
+                "status": "success",
+                "overall_progress": progress["percentage"],
+                "milestones": progress["milestones"],
+                "sections": progress["sections"],
+                "cost_summary": costs,
+            }
+        )
 
     except Exception as e:
         logger.error(f"Failed to get progress: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/projects/{project_id}/resume")
 async def resume_project(project_id: str) -> JSONResponse:
@@ -490,21 +553,27 @@ async def resume_project(project_id: str) -> JSONResponse:
         # Add milestones to project object for frontend compatibility
         project_with_milestones = state["project"].copy()
         project_with_milestones["milestones"] = state["milestones"]
-        logger.info(f"DEBUG: Added milestones to project. Keys in project object: {list(project_with_milestones.keys())}")
-        
-        return JSONResponse(content={
-            "status": "success",
-            "project_id": project_id,
-            "project": project_with_milestones,
-            "progress": state["progress"],
-            "next_step": state["next_step"],
-            "cost_to_date": state["cost_summary"]["total_cost"],
-            "milestones_completed": list(state["milestones"].keys()),
-            "sections_status": {
-                "total": len(state["sections"]),
-                "completed": sum(1 for s in state["sections"] if s["status"] == "completed")
+        logger.info(
+            f"DEBUG: Added milestones to project. Keys in project object: {list(project_with_milestones.keys())}"
+        )
+
+        return JSONResponse(
+            content={
+                "status": "success",
+                "project_id": project_id,
+                "project": project_with_milestones,
+                "progress": state["progress"],
+                "next_step": state["next_step"],
+                "cost_to_date": state["cost_summary"]["total_cost"],
+                "milestones_completed": list(state["milestones"].keys()),
+                "sections_status": {
+                    "total": len(state["sections"]),
+                    "completed": sum(
+                        1 for s in state["sections"] if s["status"] == "completed"
+                    ),
+                },
             }
-        })
+        )
 
     except HTTPException:
         raise
@@ -512,7 +581,9 @@ async def resume_project(project_id: str) -> JSONResponse:
         logger.error(f"Failed to resume project {project_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ==================== Milestone Endpoints ====================
+
 
 @router.post("/projects/{project_id}/milestones")
 async def save_milestone(project_id: str, milestone: MilestoneData) -> JSONResponse:
@@ -531,28 +602,33 @@ async def save_milestone(project_id: str, milestone: MilestoneData) -> JSONRespo
         try:
             milestone_type = MilestoneType(milestone.type)
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid milestone type: {milestone.type}")
+            raise HTTPException(
+                status_code=400, detail=f"Invalid milestone type: {milestone.type}"
+            )
 
         success = await sql_manager.save_milestone(
             project_id=project_id,
             milestone_type=milestone_type,
             data=milestone.data,
-            metadata=milestone.metadata
+            metadata=milestone.metadata,
         )
 
         if not success:
             raise HTTPException(status_code=500, detail="Failed to save milestone")
 
-        return JSONResponse(content={
-            "status": "success",
-            "message": f"Milestone {milestone.type} saved successfully"
-        })
+        return JSONResponse(
+            content={
+                "status": "success",
+                "message": f"Milestone {milestone.type} saved successfully",
+            }
+        )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to save milestone: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/projects/{project_id}/milestones/{milestone_type}")
 async def get_milestone(project_id: str, milestone_type: str) -> JSONResponse:
@@ -571,16 +647,15 @@ async def get_milestone(project_id: str, milestone_type: str) -> JSONResponse:
         try:
             mt = MilestoneType(milestone_type)
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid milestone type: {milestone_type}")
+            raise HTTPException(
+                status_code=400, detail=f"Invalid milestone type: {milestone_type}"
+            )
 
         milestone = await sql_manager.load_milestone(project_id, mt)
         if not milestone:
             raise HTTPException(status_code=404, detail="Milestone not found")
 
-        return JSONResponse(content={
-            "status": "success",
-            "milestone": milestone
-        })
+        return JSONResponse(content={"status": "success", "milestone": milestone})
 
     except HTTPException:
         raise
@@ -588,7 +663,9 @@ async def get_milestone(project_id: str, milestone_type: str) -> JSONResponse:
         logger.error(f"Failed to get milestone: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ==================== Outline Regeneration Endpoints ====================
+
 
 @router.post("/projects/{project_name}/outline/regenerate")
 async def regenerate_outline_with_feedback(
@@ -602,7 +679,8 @@ async def regenerate_outline_with_feedback(
     length_preference: Optional[str] = Form(None),
     custom_length: Optional[int] = Form(None),
     writing_style: Optional[str] = Form(None),
-    persona: Optional[str] = Form("neuraforge")
+    persona: Optional[str] = Form("neuraforge"),
+    user: Optional[Dict[str, Any]] = Depends(get_optional_user),
 ) -> JSONResponse:
     """
     Regenerate an outline with user feedback and version management.
@@ -634,9 +712,14 @@ async def regenerate_outline_with_feedback(
         # Get project by name to get project_id
         project = await sql_manager.get_project_by_name(project_name)
         if not project:
-            raise HTTPException(status_code=404, detail=f"Project '{project_name}' not found")
+            raise HTTPException(
+                status_code=404, detail=f"Project '{project_name}' not found"
+            )
 
         project_id = project["id"]
+
+        # Extract user ID from JWT token (sub is standard JWT subject claim)
+        user_id = user.get("sub") if user else None
 
         # Get or create model
         model_factory = ModelFactory()
@@ -653,7 +736,9 @@ async def regenerate_outline_with_feedback(
         persona_service = PersonaService()
 
         # Create outline agent with SQL project manager for version management
-        outline_agent = OutlineGeneratorAgent(model, content_parser, vector_store, persona_service, sql_manager)
+        outline_agent = OutlineGeneratorAgent(
+            model, content_parser, vector_store, persona_service, sql_manager
+        )
         await outline_agent.initialize()
 
         # Initialize cost tracking
@@ -661,21 +746,52 @@ async def regenerate_outline_with_feedback(
         cost_aggregator.start_workflow(project_id=project_id)
 
         # Get latest file hashes if not provided
-        files_milestone = await sql_manager.load_milestone(project_id, MilestoneType.FILES_UPLOADED)
-        file_hashes = files_milestone.get("data", {}).get("file_hashes", {}) if files_milestone else {}
+        files_milestone = await sql_manager.load_milestone(
+            project_id, MilestoneType.FILES_UPLOADED
+        )
+        logger.info(f"Regenerate: Loaded files_milestone: {files_milestone is not None}, keys: {list(files_milestone.keys()) if files_milestone else 'N/A'}")
+        if files_milestone:
+            logger.info(f"Regenerate: Milestone data keys: {list(files_milestone.get('data', {}).keys())}")
+        file_hashes = (
+            files_milestone.get("data", {}).get("file_hashes", {})
+            if files_milestone
+            else {}
+        )
+        logger.info(f"Regenerate: file_hashes dict: {file_hashes}")
+        logger.info(f"Regenerate: file_hashes keys: {list(file_hashes.keys())}")
+
+        # Validate file_hashes is not empty
+        if not file_hashes:
+            raise HTTPException(
+                status_code=400,
+                detail="No file hashes found in FILES_UPLOADED milestone. Files must be processed before regenerating outline."
+            )
 
         # Determine which hashes to use
         notebook_hash = None
         markdown_hash = None
         for file_path, file_hash in file_hashes.items():
-            if file_path.endswith('.ipynb'):
+            if file_path.endswith(".ipynb"):
                 notebook_hash = file_hash
-            elif file_path.endswith('.md'):
+            elif file_path.endswith(".md"):
                 markdown_hash = file_hash
+
+        logger.info(f"Regenerate: Extracted hashes - markdown_hash={markdown_hash}, notebook_hash={notebook_hash}")
+
+        # Validate at least one hash was found
+        if not notebook_hash and not markdown_hash:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No .ipynb or .md files found in file_hashes. Available files: {list(file_hashes.keys())}"
+            )
 
         # Regenerate outline with feedback
         start_time = datetime.now()
-        new_outline, version_info, success = await outline_agent.regenerate_with_feedback(
+        (
+            new_outline,
+            version_info,
+            success,
+        ) = await outline_agent.regenerate_with_feedback(
             project_name=project_name,
             feedback_content=feedback_content,
             focus_area=focus_area,
@@ -689,11 +805,13 @@ async def regenerate_outline_with_feedback(
             writing_style=writing_style,
             persona=persona,
             cost_aggregator=cost_aggregator,
-            project_id=project_id
+            project_id=project_id,
         )
 
         if not success or not new_outline:
-            raise HTTPException(status_code=500, detail="Failed to regenerate outline with feedback")
+            raise HTTPException(
+                status_code=500, detail="Failed to regenerate outline with feedback"
+            )
 
         # Calculate duration and get cost summary
         duration = (datetime.now() - start_time).total_seconds()
@@ -711,7 +829,7 @@ async def regenerate_outline_with_feedback(
             project_id=project_id,
             outline_data=new_outline,
             version_number=version_number,
-            feedback_id=feedback_id
+            feedback_id=feedback_id,
         )
 
         # Save feedback if previous version ID provided
@@ -719,15 +837,18 @@ async def regenerate_outline_with_feedback(
             await sql_manager.save_outline_feedback(
                 outline_version_id=previous_version_id,
                 content=feedback_content,
-                focus_area=focus_area
+                focus_area=focus_area,
             )
 
         # Update project metadata with new outline
-        await sql_manager.update_metadata(project_id, {
-            "model_name": model_name,
-            "specific_model": specific_model,
-            "persona": persona
-        })
+        await sql_manager.update_metadata(
+            project_id,
+            {
+                "model_name": model_name,
+                "specific_model": specific_model,
+                "persona": persona,
+            },
+        )
 
         # Save outline generated milestone
         milestone_data = {
@@ -741,7 +862,7 @@ async def regenerate_outline_with_feedback(
             "was_regenerated": True,
             "feedback_content": feedback_content,
             "focus_area": focus_area,
-            "previous_version_id": previous_version_id
+            "previous_version_id": previous_version_id,
         }
 
         await sql_manager.save_milestone(
@@ -751,30 +872,34 @@ async def regenerate_outline_with_feedback(
             metadata={
                 "cost_summary": cost_summary,
                 "duration_seconds": duration,
-                "version_number": version_number
-            }
+                "version_number": version_number,
+            },
         )
 
-        logger.info(f"Successfully regenerated outline for project {project_name} (version {version_number})")
+        logger.info(
+            f"Successfully regenerated outline for project {project_name} (version {version_number})"
+        )
 
         # Get total versions for unified response
         all_versions = await sql_manager.get_outline_versions(project_id)
         total_versions = len(all_versions)
 
-        return JSONResponse(content={
-            "status": "success",
-            "project_id": project_id,
-            "project_name": project_name,
-            "outline": new_outline,
-            "version_info": {
-                "version_number": version_number,
-                "version_id": str(version_number),  # Use version number as ID
-                "total_versions": total_versions,
-                "is_latest": True
-            },
-            "cost_summary": cost_summary,
-            "duration_seconds": duration
-        })
+        return JSONResponse(
+            content={
+                "status": "success",
+                "project_id": project_id,
+                "project_name": project_name,
+                "outline": new_outline,
+                "version_info": {
+                    "version_number": version_number,
+                    "version_id": str(version_number),  # Use version number as ID
+                    "total_versions": total_versions,
+                    "is_latest": True,
+                },
+                "cost_summary": cost_summary,
+                "duration_seconds": duration,
+            }
+        )
 
     except HTTPException:
         raise
@@ -798,7 +923,9 @@ async def get_outline_versions(project_name: str) -> JSONResponse:
         # Get project by name
         project = await sql_manager.get_project_by_name(project_name)
         if not project:
-            raise HTTPException(status_code=404, detail=f"Project '{project_name}' not found")
+            raise HTTPException(
+                status_code=404, detail=f"Project '{project_name}' not found"
+            )
 
         project_id = project["id"]
 
@@ -814,7 +941,7 @@ async def get_outline_versions(project_name: str) -> JSONResponse:
                 "created_at": version.get("created_at"),
                 "outline_hash": version.get("outline_hash"),
                 "model_used": version.get("model_used"),
-                "metadata": version.get("metadata", {})
+                "metadata": version.get("metadata", {}),
             }
 
             # Include outline preview (title and section count)
@@ -824,7 +951,7 @@ async def get_outline_versions(project_name: str) -> JSONResponse:
                     "title": outline_data.get("title", "Untitled"),
                     "section_count": len(outline_data.get("sections", [])),
                     "difficulty_level": outline_data.get("difficulty_level"),
-                    "has_prerequisites": bool(outline_data.get("prerequisites"))
+                    "has_prerequisites": bool(outline_data.get("prerequisites")),
                 }
 
             version_list.append(version_info)
@@ -832,15 +959,19 @@ async def get_outline_versions(project_name: str) -> JSONResponse:
         # Sort by version number descending
         version_list.sort(key=lambda x: x["version_number"], reverse=True)
 
-        logger.info(f"Retrieved {len(version_list)} outline versions for project {project_name}")
+        logger.info(
+            f"Retrieved {len(version_list)} outline versions for project {project_name}"
+        )
 
-        return JSONResponse(content={
-            "status": "success",
-            "project_id": project_id,
-            "project_name": project_name,
-            "versions": version_list,
-            "total_versions": len(version_list)
-        })
+        return JSONResponse(
+            content={
+                "status": "success",
+                "project_id": project_id,
+                "project_name": project_name,
+                "versions": version_list,
+                "total_versions": len(version_list),
+            }
+        )
 
     except HTTPException:
         raise
@@ -850,6 +981,7 @@ async def get_outline_versions(project_name: str) -> JSONResponse:
 
 
 # ==================== Export Endpoints ====================
+
 
 @router.get("/projects/{project_id}/export")
 async def export_project(project_id: str, format: str = "json") -> Any:
@@ -872,6 +1004,7 @@ async def export_project(project_id: str, format: str = "json") -> Any:
             return JSONResponse(content=data)
         elif format == "markdown":
             from fastapi.responses import PlainTextResponse
+
             return PlainTextResponse(content=data)
         else:
             raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
@@ -882,7 +1015,9 @@ async def export_project(project_id: str, format: str = "json") -> Any:
         logger.error(f"Failed to export project: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ==================== Backward Compatibility ====================
+
 
 @router.get("/projects/by-name/{project_name}")
 async def get_project_by_name(project_name: str) -> JSONResponse:
@@ -907,10 +1042,7 @@ async def get_project_by_name(project_name: str) -> JSONResponse:
         project["progress"] = progress
         project["cost_summary"] = cost_summary
 
-        return JSONResponse(content={
-            "status": "success",
-            "project": project
-        })
+        return JSONResponse(content={"status": "success", "project": project})
 
     except HTTPException:
         raise

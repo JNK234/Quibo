@@ -52,28 +52,53 @@ class OutlineGeneratorAgent(BaseGraphAgent):
 
     def _get_processed_content(self, content_hash: str, file_type: str, query: Optional[str] = None) -> Optional[ContentStructure]:
         """Get processed content from the content parsing agent.
-        
+
         Args:
             content_hash: Hash of the content to retrieve
             file_type: Type of file (.ipynb, .md, etc.)
             query: Optional query to filter content
-            
+
         Returns:
             ContentStructure object or None if not found
         """
+        # Search only by content_hash to avoid file_type mismatches
         metadata_filter = {
-            "content_hash": content_hash,
-            "file_type": file_type
+            "content_hash": content_hash
         }
-        
+
+        logging.info(f"Searching for content with hash={content_hash}, file_type={file_type}")
         results = self.content_parser.search_content(
             metadata_filter=metadata_filter,
             query=query
         )
-        
+        logging.info(f"Found {len(results) if results else 0} results for hash {content_hash}")
+
         if not results:
             logging.warning(f"No content found for hash {content_hash}")
             return None
+
+        # Validate hash uniqueness - check if multiple different file_types returned
+        unique_file_types = set()
+        for result in results:
+            result_file_type = result.metadata.get("file_type", "unknown")
+            unique_file_types.add(result_file_type)
+
+        if len(unique_file_types) > 1:
+            logging.error(
+                f"Hash collision detected! content_hash={content_hash} matches multiple file types: {unique_file_types}. "
+                f"Expected file_type={file_type}, found types={unique_file_types}"
+            )
+            # Filter to expected file_type only
+            results = [r for r in results if r.metadata.get("file_type") == file_type]
+            if not results:
+                logging.error(f"No results match expected file_type={file_type} after filtering")
+                return None
+            logging.info(f"Filtered to {len(results)} results matching file_type={file_type}")
+        elif unique_file_types and list(unique_file_types)[0] != file_type:
+            logging.warning(
+                f"Hash {content_hash} returned file_type={list(unique_file_types)[0]} "
+                f"but expected {file_type}. Proceeding with returned content."
+            )
         
         # Process and organize the content
         main_content = []

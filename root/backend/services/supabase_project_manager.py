@@ -286,6 +286,12 @@ class SupabaseProjectManager:
         """Delete or soft-delete a project."""
         try:
             async with await self._get_lock(project_id):
+                # Check if project exists first
+                existing = self.supabase.table("projects").select("id").eq("id", project_id).execute()
+                if not existing.data:
+                    logger.warning(f"Project {project_id} not found for deletion")
+                    return False
+
                 if permanent:
                     result = self.supabase.table("projects").delete().eq("id", project_id).execute()
                     logger.info(f"Permanently deleted project {project_id}")
@@ -295,10 +301,12 @@ class SupabaseProjectManager:
                     }).eq("id", project_id).execute()
                     logger.info(f"Soft deleted project {project_id}")
 
+                # Consistent check: if no data returned, operation failed
                 if not result.data:
+                    logger.error(f"Delete operation returned no data for project {project_id}")
                     return False
 
-            return True
+                return True
 
         except Exception as e:
             logger.error(f"Failed to delete project {project_id}: {e}")
