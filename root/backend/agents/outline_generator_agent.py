@@ -80,7 +80,7 @@ class OutlineGeneratorAgent(BaseGraphAgent):
         # Validate hash uniqueness - check if multiple different file_types returned
         unique_file_types = set()
         for result in results:
-            result_file_type = result.metadata.get("file_type", "unknown")
+            result_file_type = result.get("metadata", {}).get("file_type", "unknown")
             unique_file_types.add(result_file_type)
 
         if len(unique_file_types) > 1:
@@ -89,7 +89,7 @@ class OutlineGeneratorAgent(BaseGraphAgent):
                 f"Expected file_type={file_type}, found types={unique_file_types}"
             )
             # Filter to expected file_type only
-            results = [r for r in results if r.metadata.get("file_type") == file_type]
+            results = [r for r in results if r.get("metadata", {}).get("file_type") == file_type]
             if not results:
                 logging.error(f"No results match expected file_type={file_type} after filtering")
                 return None

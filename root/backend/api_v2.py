@@ -565,6 +565,7 @@ async def resume_project(project_id: str) -> JSONResponse:
                 "progress": state["progress"],
                 "next_step": state["next_step"],
                 "cost_to_date": state["cost_summary"]["total_cost"],
+                "cost_summary": state["cost_summary"],  # Include full cost summary
                 "milestones_completed": list(state["milestones"].keys()),
                 "sections_status": {
                     "total": len(state["sections"]),
