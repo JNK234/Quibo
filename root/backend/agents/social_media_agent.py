@@ -41,7 +41,14 @@ class SocialMediaAgent:
         self.cost_aggregator = CostAggregator()
         self.cost_aggregator.start_workflow(project_id=project_id or 'social_media_unknown')
         self._llm_wrapped = False
+        self._current_node_name: str = "social_media_generation"
+        self._current_stage: str = "social_media_generation"
         logger.info(f"SocialMediaAgent initialized with project_id: {project_id}")
+
+    def _set_tracking_context(self, node_name: str, stage: str = "social_media_generation") -> None:
+        """Set per-call tracking context for cost tracking."""
+        self._current_node_name = node_name
+        self._current_stage = stage
 
     async def initialize(self):
         """Async initialization - wraps LLM with cost tracking."""
@@ -49,18 +56,26 @@ class SocialMediaAgent:
             return
         # Wrap LLM with cost tracking
         if self.llm and not self._llm_wrapped:
+            # Avoid double-wrapping if the shared model instance is already wrapped elsewhere
+            if isinstance(self.llm, CostTrackingModel):
+                self._llm_wrapped = True
+                self._initialized = True
+                logger.info("LLM already wrapped with cost tracking")
+                return
             self.llm = CostTrackingModel(
                 base_model=self.llm,
                 model_name=getattr(self.llm, 'model_name', 'social_media_model') if hasattr(self.llm, 'model_name') else str(type(self.llm).__name__)
             )
             self.llm.configure_tracking(
+                cost_aggregator=self.cost_aggregator,
                 sql_project_manager=self.sql_project_manager,
                 project_id=self.project_id,
                 agent_name="SocialMediaAgent",
                 context_supplier=lambda: {
-                    "agent": "SocialMediaAgent",
+                    "agent_name": "SocialMediaAgent",
+                    "node_name": self._current_node_name,
                     "project_id": self.project_id,
-                    "stage": "social_media_generation"
+                    "stage": self._current_stage,
                 }
             )
             self._llm_wrapped = True
@@ -71,18 +86,39 @@ class SocialMediaAgent:
     def _wrap_llm_for_cost_tracking(self):
         """Wrap LLM with cost tracking if not already wrapped."""
         if self.llm and not self._llm_wrapped:
+            # Avoid double-wrapping if already wrapped elsewhere (agents share a cached model instance)
+            if isinstance(self.llm, CostTrackingModel):
+                try:
+                    self.llm.configure_tracking(
+                        cost_aggregator=self.cost_aggregator,
+                        sql_project_manager=self.sql_project_manager,
+                        project_id=self.project_id,
+                        agent_name="SocialMediaAgent",
+                        context_supplier=lambda: {
+                            "agent_name": "SocialMediaAgent",
+                            "node_name": self._current_node_name,
+                            "project_id": self.project_id,
+                            "stage": self._current_stage,
+                        },
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to re-configure tracking on existing CostTrackingModel: {e}")
+                self._llm_wrapped = True
+                return
             self.llm = CostTrackingModel(
                 base_model=self.llm,
                 model_name=getattr(self.llm, 'model_name', 'social_media_model') if hasattr(self.llm, 'model_name') else str(type(self.llm).__name__)
             )
             self.llm.configure_tracking(
+                cost_aggregator=self.cost_aggregator,
                 sql_project_manager=self.sql_project_manager,
                 project_id=self.project_id,
                 agent_name="SocialMediaAgent",
                 context_supplier=lambda: {
-                    "agent": "SocialMediaAgent",
+                    "agent_name": "SocialMediaAgent",
+                    "node_name": self._current_node_name,
                     "project_id": self.project_id,
-                    "stage": "social_media_generation"
+                    "stage": self._current_stage,
                 }
             )
             self._llm_wrapped = True
@@ -107,24 +143,37 @@ class SocialMediaAgent:
                 "newsletter_content": str | None
             }
         """
+        def _extract_tag(tag: str) -> str | None:
+            match = re.search(rf"<{tag}>(.*?)</{tag}>", response_text, re.DOTALL | re.IGNORECASE)
+            return match.group(1).strip() if match else None
+
         parsed_data = {
             "content_breakdown": None,
             "linkedin_post": None,
             "x_post": None,
-            "newsletter_content": None
+            "newsletter_content": None,
         }
 
-        # Use regex to find content within specific tags
-        tags = ["content_breakdown", "linkedin_post", "x_post", "newsletter_content"]
-        for tag in tags:
-            # Regex to find content between <tag> and </tag>, handling potential newlines
-            # DOTALL flag makes '.' match newlines as well
-            match = re.search(rf"<{tag}>(.*?)</{tag}>", response_text, re.DOTALL | re.IGNORECASE)
-            if match:
-                # Extract the content and strip leading/trailing whitespace
-                parsed_data[tag] = match.group(1).strip()
-            else:
+        # Primary tags we expect from the prompt
+        parsed_data["linkedin_post"] = _extract_tag("linkedin_post")
+        parsed_data["x_post"] = _extract_tag("x_post")
+        parsed_data["newsletter_content"] = _extract_tag("newsletter_content")
+
+        # Back-compat / prompt mismatch handling:
+        # The prompt emits <analysis_phase> for the "thinking / breakdown" section.
+        parsed_data["content_breakdown"] = _extract_tag("content_breakdown") or _extract_tag("analysis_phase")
+
+        # Warn only when key sections are missing (avoid noisy warnings for known mismatches)
+        for key, tag in [
+            ("linkedin_post", "linkedin_post"),
+            ("x_post", "x_post"),
+            ("newsletter_content", "newsletter_content"),
+        ]:
+            if not parsed_data.get(key):
                 logger.warning(f"Could not find or parse content for tag: <{tag}>")
+
+        if not parsed_data.get("content_breakdown"):
+            logger.warning("Could not find or parse content breakdown (<content_breakdown> or <analysis_phase>).")
 
         return parsed_data
 
@@ -151,6 +200,7 @@ class SocialMediaAgent:
         logger.info(f"Generating social content for blog titled: {blog_title}")
 
         # Ensure LLM is wrapped for cost tracking
+        self._set_tracking_context("generate_content", "social_media_generation")
         self._wrap_llm_for_cost_tracking()
 
         try:
@@ -355,6 +405,7 @@ class SocialMediaAgent:
         logger.info(f"Generating Twitter thread for blog titled: {blog_title}")
 
         # Ensure LLM is wrapped for cost tracking
+        self._set_tracking_context("generate_thread", "social_media_generation")
         self._wrap_llm_for_cost_tracking()
 
         try:
@@ -423,30 +474,34 @@ class SocialMediaAgent:
         Returns:
             A dictionary containing all parsed content.
         """
+        def _extract_tag(tag: str) -> str | None:
+            match = re.search(rf"<{tag}>(.*?)</{tag}>", response_text, re.DOTALL | re.IGNORECASE)
+            return match.group(1).strip() if match else None
+
         parsed_data = {
             "content_breakdown": None,
             "linkedin_post": None,
             "x_post": None,
             "x_thread": None,
-            "newsletter_content": None
+            "newsletter_content": None,
         }
-        
-        # Parse standard tags
-        standard_tags = ["content_breakdown", "linkedin_post", "x_post", "newsletter_content"]
-        for tag in standard_tags:
-            match = re.search(rf"<{tag}>(.*?)</{tag}>", response_text, re.DOTALL | re.IGNORECASE)
-            if match:
-                parsed_data[tag] = match.group(1).strip()
-            else:
+
+        parsed_data["linkedin_post"] = _extract_tag("linkedin_post")
+        parsed_data["x_post"] = _extract_tag("x_post")
+        parsed_data["newsletter_content"] = _extract_tag("newsletter_content")
+
+        # Back-compat / prompt mismatch handling:
+        parsed_data["content_breakdown"] = _extract_tag("content_breakdown") or _extract_tag("analysis_phase")
+
+        parsed_data["x_thread"] = _extract_tag("x_thread")
+
+        # Warnings (signal missing critical parts)
+        for tag in ["linkedin_post", "x_post", "newsletter_content", "x_thread"]:
+            if not parsed_data.get(tag):
                 logger.warning(f"Could not find or parse content for tag: <{tag}>")
-        
-        # Parse thread content
-        thread_match = re.search(r"<x_thread>(.*?)</x_thread>", response_text, re.DOTALL | re.IGNORECASE)
-        if thread_match:
-            parsed_data["x_thread"] = thread_match.group(1).strip()
-        else:
-            logger.warning("Could not find or parse content for tag: <x_thread>")
-        
+        if not parsed_data.get("content_breakdown"):
+            logger.warning("Could not find or parse content breakdown (<content_breakdown> or <analysis_phase>).")
+
         return parsed_data
 
     async def generate_comprehensive_content(self, blog_content: str, blog_title: str = "Blog Post", persona: str = "student_sharing", project_id: Optional[str] = None) -> SocialMediaContent | None:
@@ -471,12 +526,18 @@ class SocialMediaAgent:
 
         logger.info(f"Generating comprehensive social content for blog titled: {blog_title}")
 
-        # Update project_id if provided
-        if project_id and not self.project_id:
+        # Update project_id if provided (social agent is cached, so this must be refreshed per request)
+        if project_id and project_id != self.project_id:
             self.project_id = project_id
+            # Ensure social costs are per-workflow; reset avoids cross-project accumulation on cached agents
+            try:
+                self.cost_aggregator.reset()
+            except Exception:
+                self.cost_aggregator = CostAggregator()
             self.cost_aggregator.start_workflow(project_id=project_id)
 
         # Ensure LLM is wrapped for cost tracking
+        self._set_tracking_context("generate_comprehensive_content", "social_media_generation")
         self._wrap_llm_for_cost_tracking()
 
         try:

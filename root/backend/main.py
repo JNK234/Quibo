@@ -788,6 +788,9 @@ async def generate_section(
                     "project_id": project_id,
                     "section_title": cached_section.get("title", section_title),
                     "section_content": cached_section.get("content"),
+                    # IMPORTANT: cached sections may already have image placeholders stored in SQL
+                    # and the frontend depends on this field to display them.
+                    "image_placeholders": cached_section.get("image_placeholders", []),
                     "section_index": section_index,
                     "was_cached": True,
                 }
@@ -1375,6 +1378,7 @@ async def generate_social_content(project_name: str) -> JSONResponse:
             blog_content=refined_draft,
             blog_title=blog_title,
             persona=workflow_state.get("persona", "neuraforge"),
+            project_id=project_id,
         )
 
         if not social_content:
@@ -1401,7 +1405,9 @@ async def generate_social_content(project_name: str) -> JSONResponse:
 
         # Save to completed_blogs table - this marks the blog as fully complete
         word_count = len(refined_draft.split())
-        cost_summary = workflow_state.get("cost_summary", {})
+        # IMPORTANT: Social media generation happens outside the per-endpoint CostAggregator used elsewhere.
+        # Use SQL cost tracking table as the source of truth for total cost to avoid missing LLM calls.
+        cost_summary = await sql_project_manager.get_cost_summary(project_id)
         total_cost = cost_summary.get("total_cost", 0.0)
 
         # Calculate generation time from project creation

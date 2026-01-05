@@ -406,6 +406,20 @@ def format_section_content_as_markdown(content_data: Any) -> str:
     return str(content_data)
 
 
+def format_section_with_placeholders(content: Any, image_placeholders: Any) -> str:
+    """
+    Canonical helper to ensure image placeholders are consistently injected into displayed markdown.
+    This prevents placeholders from being lost across compile/refine flows even if `formatted_content`
+    was generated without them.
+    """
+    return format_section_content_as_markdown(
+        {
+            "content": content,
+            "image_placeholders": image_placeholders or [],
+        }
+    )
+
+
 def create_complete_blog_package() -> Dict[str, str]:
     """
     Creates a complete package of all generated content for download.
@@ -692,7 +706,7 @@ class ProjectHubUI:
                 SessionManager.set('social_content', state.get('social_content'))
                 SessionManager.set('generated_sections', state.get('generated_sections', {}))
                 SessionManager.set('cost_summary', state.get('cost_summary'))
-                
+
                 # Restore hashes if available (critical for caching)
                 SessionManager.set('outline_hash', state.get('outline_hash'))
                 
@@ -1677,8 +1691,11 @@ class BlogDraftUI:
                         section = sections_data.get(index, {})
                         section_num = int(index) + 1  # Convert to int for display
                         section_title = section.get('title', f'Section {section_num}')
-                        # Try formatted_content first, fall back to content (from backend resume)
-                        formatted_content = section.get('formatted_content') or section.get('content', '')
+                        # Always inject placeholders at compile time so they cannot be lost later.
+                        # Prefer raw_content (API response) -> content (resume) -> formatted_content (fallback).
+                        base_content = section.get('raw_content') or section.get('content') or section.get('formatted_content') or ''
+                        image_placeholders = section.get('image_placeholders') or []
+                        formatted_content = format_section_with_placeholders(base_content, image_placeholders)
 
                         draft_parts.append(f"## {section_title}\n") # Add H2 for section title
                         draft_parts.append(formatted_content)
@@ -1757,7 +1774,14 @@ class BlogDraftUI:
                 section_num = int(index) + 1  # Convert to int for display
                 with st.expander(f"Section {section_num}: {section_data.get('title', 'Untitled')}", expanded=True): # Expand by default now
                     # Display content - try formatted_content first, fall back to content (from backend resume)
-                    content = section_data.get('formatted_content') or section_data.get('content') or '*No content available.*'
+                    base_content = section_data.get('formatted_content') or section_data.get('content') or '*No content available.*'
+                    image_placeholders = section_data.get('image_placeholders') or []
+                    # If placeholders exist, ensure they are displayed even if the stored formatted_content omitted them.
+                    content = (
+                        format_section_with_placeholders(section_data.get('raw_content') or section_data.get('content') or base_content, image_placeholders)
+                        if image_placeholders
+                        else base_content
+                    )
                     st.markdown(content)
 
                     # Display Raw Section Data (not nested in an expander)

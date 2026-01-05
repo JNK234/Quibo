@@ -284,6 +284,8 @@ Review and improve the draft while **PRESERVING ALL CONTENT AND WORD COUNT**. Fo
 - Maintain approximately the same word count (±5%)
 - DO NOT summarize or consolidate sections
 - Preserve all code blocks, formulas, and tables
+- Preserve any image recommendation blocks exactly as-is. These appear like:
+  - `[IMAGE_PLACEHOLDER: ...]` followed by metadata lines (Alt text / Placement / Purpose, etc.)
 - Keep every unique piece of information
 
 **Output:**
@@ -316,6 +318,7 @@ Focus on:
 - Keep the technical accuracy intact
 - Ensure that removing redundancy doesn't create gaps in understanding
 - Retain at least one instance of important concepts for clarity
+- Preserve any image recommendation blocks exactly as-is (e.g., `[IMAGE_PLACEHOLDER: ...]` blocks and their metadata lines). Do NOT delete or rewrite these.
 
 **Output:**
 Provide the complete refined blog post with redundancies removed. Output only the markdown content without any explanations or meta-commentary.
