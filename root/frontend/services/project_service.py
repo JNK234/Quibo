@@ -173,7 +173,7 @@ class ProjectService:
             async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
                 response = await client.delete(
                     f"{self.base_url}/api/v2/projects/{project_id}",
-                    params={"permanent": "true"},
+                    params={"permanent": True},  # Boolean not string
                     headers=headers
                 )
                 response.raise_for_status()
