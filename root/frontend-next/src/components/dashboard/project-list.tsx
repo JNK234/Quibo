@@ -1,58 +1,96 @@
-// ABOUTME: Project list component for dashboard with empty state
+// ABOUTME: Project list component for dashboard with loading and error states
 // ABOUTME: Shows user's blog projects or prompts to create first one
 
-"use client";
+"use client"
 
-import { motion } from "framer-motion";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { FileText, Plus, Sparkles } from "lucide-react";
+import { motion } from "framer-motion"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
+import { FileText, Plus, Sparkles, RefreshCw } from "lucide-react"
+import { useProjects } from "@/lib/queries/project-queries"
+import { useUIStore } from "@/store/ui-store"
+import { ProjectListItem } from "./project-list-item"
 
-interface ProjectListProps {
-  projects?: Array<{
-    id: string;
-    name: string;
-    status: string;
-    updatedAt: string;
-  }>;
-}
+export function ProjectList() {
+  const { data: projects, isLoading, isError, refetch } = useProjects()
+  const { openNewProjectModal } = useUIStore()
 
-export function ProjectList({ projects = [] }: ProjectListProps) {
-  if (projects.length === 0) {
-    return <EmptyState />;
+  if (isLoading) {
+    return <LoadingState />
+  }
+
+  if (isError) {
+    return <ErrorState onRetry={() => refetch()} />
+  }
+
+  if (!projects || projects.length === 0) {
+    return <EmptyState onCreateClick={openNewProjectModal} />
   }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       {projects.map((project, index) => (
-        <motion.div
-          key={project.id}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: index * 0.1 }}
-        >
-          <Card className="cursor-pointer transition-all hover:shadow-lg hover:border-primary/50">
-            <CardContent className="p-6">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  <FileText className="w-5 h-5 text-primary" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-medium truncate">{project.name}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {project.status}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
+        <ProjectListItem key={project.id} project={project} index={index} />
       ))}
     </div>
-  );
+  )
 }
 
-function EmptyState() {
+function LoadingState() {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {[0, 1, 2].map((i) => (
+        <Card key={i}>
+          <CardContent className="p-6">
+            <div className="flex items-start gap-4">
+              <Skeleton className="w-10 h-10 rounded-lg" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-5 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+                <Skeleton className="h-3 w-1/3" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+function ErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="flex flex-col items-center justify-center py-16"
+    >
+      <Card className="max-w-md w-full">
+        <CardContent className="flex flex-col items-center text-center p-8">
+          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
+            <RefreshCw className="w-8 h-8 text-destructive" />
+          </div>
+          <h2 className="font-serif text-xl font-semibold mb-2">
+            Failed to Load Projects
+          </h2>
+          <p className="text-muted-foreground text-sm mb-6">
+            We couldn&apos;t load your projects. Please try again.
+          </p>
+          <Button onClick={onRetry} variant="outline">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    </motion.div>
+  )
+}
+
+interface EmptyStateProps {
+  onCreateClick: () => void
+}
+
+function EmptyState({ onCreateClick }: EmptyStateProps) {
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
@@ -113,7 +151,11 @@ function EmptyState() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
           >
-            <Button size="lg" className="gradient-warm border-0 text-white hover:opacity-90">
+            <Button
+              size="lg"
+              onClick={onCreateClick}
+              className="gradient-warm border-0 text-white hover:opacity-90"
+            >
               <Plus className="w-4 h-4 mr-2" />
               New Project
             </Button>
@@ -134,5 +176,5 @@ function EmptyState() {
         </CardContent>
       </Card>
     </motion.div>
-  );
+  )
 }

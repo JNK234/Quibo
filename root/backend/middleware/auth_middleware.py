@@ -26,6 +26,10 @@ class SupabaseAuthMiddleware(BaseHTTPMiddleware):
             raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY must be set")
 
     async def dispatch(self, request: Request, call_next):
+        # Skip auth for CORS preflight requests
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         # Skip auth for health check and public endpoints
         if request.url.path in ["/health", "/models", "/personas"]:
             return await call_next(request)

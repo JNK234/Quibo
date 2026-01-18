@@ -17,6 +17,7 @@ if str(root_dir) not in sys.path:
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -53,6 +54,10 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
     """Middleware to validate API key on all requests except health check."""
 
     async def dispatch(self, request: Request, call_next):
+        # Skip auth for CORS preflight requests
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         # Skip auth for health check (needed for Cloud Run health probes)
         if request.url.path == "/health":
             return await call_next(request)
@@ -74,6 +79,20 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
 
 
 app = FastAPI(title="Agentic Blogging Assistant API")
+
+# Add CORS middleware - must be added before other middleware
+# Allow localhost for development and Cloud Run URL for production
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://quibo.app",  # Production domain when available
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Add API key authentication middleware
 app.add_middleware(APIKeyAuthMiddleware)
