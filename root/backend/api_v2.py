@@ -6,7 +6,7 @@ API v2 endpoints for project management with SQL backend.
 Implements project_id pattern while maintaining backward compatibility.
 """
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import JSONResponse
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
@@ -26,8 +26,24 @@ logger = logging.getLogger("APIv2")
 router = APIRouter(prefix="/api/v2", tags=["v2"])
 
 # Initialize services
-sql_manager = SupabaseProjectManager()  # Keep variable name for compatibility
+# Note: _default_manager is created per-request with JWT token for RLS enforcement
+# This singleton is kept for backward compatibility with non-user-scoped operations
+_default_manager = SupabaseProjectManager()
 cost_aggregator = CostAggregator()
+
+
+def _get_manager(request: Request) -> SupabaseProjectManager:
+    """
+    Get a SupabaseProjectManager instance with user authentication context.
+
+    Creates an authenticated manager when JWT token is available in request.state,
+    enabling proper RLS enforcement. Falls back to default manager for backward
+    compatibility when no token is present.
+    """
+    jwt_token = getattr(request.state, 'token', None)
+    if jwt_token:
+        return SupabaseProjectManager(jwt_token=jwt_token)
+    return _default_manager
 
 # ==================== Pydantic Models ====================
 
@@ -65,7 +81,7 @@ class MilestoneData(BaseModel):
 # ==================== Project CRUD Endpoints ====================
 
 @router.post("/projects")
-async def create_project(request: ProjectCreate) -> JSONResponse:
+async def create_project(request: ProjectCreate, req: Request) -> JSONResponse:
     """
     Create a new project with unique ID.
 
@@ -73,9 +89,17 @@ async def create_project(request: ProjectCreate) -> JSONResponse:
         Project ID and details
     """
     try:
-        project_id = await sql_manager.create_project(
+        # Get user_id from request state (set by auth middleware)
+        user_id = None
+        if hasattr(req.state, 'user') and req.state.user:
+            user_id = req.state.user.get('id')
+
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+        project_id = await manager.create_project(
             project_name=request.name,
-            metadata=request.metadata
+            metadata=request.metadata,
+            user_id=user_id
         )
 
         return JSONResponse(content={
@@ -90,15 +114,16 @@ async def create_project(request: ProjectCreate) -> JSONResponse:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/projects")
-async def list_projects(status: Optional[str] = None) -> JSONResponse:
+async def list_projects(status: Optional[str] = None, req: Request = None) -> JSONResponse:
     """
     List all projects with optional status filter.
 
     Args:
         status: Optional filter (active, archived, deleted)
+        req: Request object for authentication context
 
     Returns:
-        List of projects with progress and cost info
+        List of projects with progress and cost info (filtered by user via RLS)
     """
     try:
         # Parse status if provided
@@ -109,19 +134,22 @@ async def list_projects(status: Optional[str] = None) -> JSONResponse:
             except ValueError:
                 raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
 
-        # Get projects
-        projects = await sql_manager.list_projects(status=project_status)
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+
+        # Get projects (RLS will filter to user's projects automatically)
+        projects = await manager.list_projects(status=project_status)
 
         # Enrich with progress and cost for active projects
         enriched_projects = []
         for project in projects:
             if project["status"] == ProjectStatus.ACTIVE.value:
                 # Get progress
-                progress = await sql_manager.get_progress(project["id"])
+                progress = await manager.get_progress(project["id"])
                 project["progress"] = progress["percentage"]
 
                 # Get cost summary
-                cost_summary = await sql_manager.get_cost_summary(project["id"])
+                cost_summary = await manager.get_cost_summary(project["id"])
                 project["total_cost"] = cost_summary["total_cost"]
 
             enriched_projects.append(project)
@@ -139,34 +167,38 @@ async def list_projects(status: Optional[str] = None) -> JSONResponse:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/projects/{project_id}")
-async def get_project(project_id: str) -> JSONResponse:
+async def get_project(project_id: str, req: Request) -> JSONResponse:
     """
     Get project details by ID.
 
     Args:
         project_id: Project UUID
+        req: Request object for authentication context
 
     Returns:
-        Project details with progress and cost
+        Project details with progress and cost (RLS enforced)
     """
     try:
-        project = await sql_manager.get_project(project_id)
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+
+        project = await manager.get_project(project_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
 
         # Get complete project state
-        progress = await sql_manager.get_progress(project_id)
-        cost_summary = await sql_manager.get_cost_summary(project_id)
+        progress = await manager.get_progress(project_id)
+        cost_summary = await manager.get_cost_summary(project_id)
 
         # Get all milestones
         milestones = {}
         for milestone_type in MilestoneType:
-            milestone_data = await sql_manager.load_milestone(project_id, milestone_type)
+            milestone_data = await manager.load_milestone(project_id, milestone_type)
             if milestone_data:
                 milestones[milestone_type.value] = milestone_data
 
         # Get sections if they exist
-        sections = await sql_manager.load_sections(project_id) or []
+        sections = await manager.load_sections(project_id) or []
 
         # Determine next step based on completed milestones
         milestone_set = set(milestones.keys())
@@ -201,19 +233,23 @@ async def get_project(project_id: str) -> JSONResponse:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/projects/{project_id}")
-async def delete_project(project_id: str, permanent: bool = False) -> JSONResponse:
+async def delete_project(project_id: str, req: Request, permanent: bool = False) -> JSONResponse:
     """
     Delete or archive a project.
 
     Args:
         project_id: Project UUID
+        req: Request object for authentication context
         permanent: If true, permanently delete; otherwise soft delete
 
     Returns:
-        Success status
+        Success status (RLS enforced - only owner can delete)
     """
     try:
-        success = await sql_manager.delete_project(project_id, permanent=permanent)
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+
+        success = await manager.delete_project(project_id, permanent=permanent)
         if not success:
             raise HTTPException(status_code=404, detail="Project not found")
 
@@ -232,28 +268,32 @@ async def delete_project(project_id: str, permanent: bool = False) -> JSONRespon
 # ==================== Section Management Endpoints ====================
 
 @router.put("/projects/{project_id}/sections")
-async def update_sections(project_id: str, sections: List[SectionUpdate]) -> JSONResponse:
+async def update_sections(project_id: str, sections: List[SectionUpdate], req: Request) -> JSONResponse:
     """
     Batch update all sections for a project.
 
     Args:
         project_id: Project UUID
         sections: List of sections to update
+        req: Request object for authentication context
 
     Returns:
-        Update status
+        Update status (RLS enforced)
     """
     try:
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+
         # Convert to dict format
         section_dicts = [s.dict() for s in sections]
 
         # Save sections
-        success = await sql_manager.save_sections(project_id, section_dicts)
+        success = await manager.save_sections(project_id, section_dicts)
         if not success:
             raise HTTPException(status_code=500, detail="Failed to save sections")
 
         # Track the operation cost (minimal for metadata operation)
-        await sql_manager.track_cost(
+        await manager.track_cost(
             project_id=project_id,
             agent_name="api",
             operation="section_batch_update",
@@ -276,18 +316,21 @@ async def update_sections(project_id: str, sections: List[SectionUpdate]) -> JSO
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/projects/{project_id}/sections")
-async def get_sections(project_id: str) -> JSONResponse:
+async def get_sections(project_id: str, req: Request) -> JSONResponse:
     """
     Get all sections for a project.
 
     Args:
         project_id: Project UUID
+        req: Request object for authentication context
 
     Returns:
-        List of sections with status
+        List of sections with status (RLS enforced)
     """
     try:
-        sections = await sql_manager.load_sections(project_id)
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+        sections = await manager.load_sections(project_id)
 
         # Calculate section stats
         completed = sum(1 for s in sections if s["status"] == SectionStatus.COMPLETED.value)
@@ -315,6 +358,7 @@ async def update_section_status(
     project_id: str,
     section_index: int,
     status: str,
+    req: Request,
     cost_delta: Optional[float] = None
 ) -> JSONResponse:
     """
@@ -324,13 +368,16 @@ async def update_section_status(
         project_id: Project UUID
         section_index: Section index
         status: New status
+        req: Request object for authentication context
         cost_delta: Optional cost update
 
     Returns:
-        Update status
+        Update status (RLS enforced)
     """
     try:
-        success = await sql_manager.update_section_status(
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+        success = await manager.update_section_status(
             project_id=project_id,
             section_index=section_index,
             status=status,
@@ -354,19 +401,22 @@ async def update_section_status(
 # ==================== Cost Tracking Endpoints ====================
 
 @router.post("/projects/{project_id}/costs")
-async def track_cost(project_id: str, request: CostTrackRequest) -> JSONResponse:
+async def track_cost(project_id: str, request: CostTrackRequest, req: Request) -> JSONResponse:
     """
     Track cost for an operation.
 
     Args:
         project_id: Project UUID
         request: Cost tracking details
+        req: Request object for authentication context
 
     Returns:
-        Success status
+        Success status (RLS enforced)
     """
     try:
-        success = await sql_manager.track_cost(
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+        success = await manager.track_cost(
             project_id=project_id,
             agent_name=request.agent_name,
             operation=request.operation,
@@ -392,18 +442,21 @@ async def track_cost(project_id: str, request: CostTrackRequest) -> JSONResponse
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/projects/{project_id}/costs")
-async def get_cost_summary(project_id: str) -> JSONResponse:
+async def get_cost_summary(project_id: str, req: Request) -> JSONResponse:
     """
     Get cost summary for a project.
 
     Args:
         project_id: Project UUID
+        req: Request object for authentication context
 
     Returns:
-        Cost summary with breakdown
+        Cost summary with breakdown (RLS enforced)
     """
     try:
-        cost_summary = await sql_manager.get_cost_summary(project_id)
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+        cost_summary = await manager.get_cost_summary(project_id)
 
         return JSONResponse(content={
             "status": "success",
@@ -415,18 +468,21 @@ async def get_cost_summary(project_id: str) -> JSONResponse:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/projects/{project_id}/costs/analysis")
-async def get_cost_analysis(project_id: str) -> JSONResponse:
+async def get_cost_analysis(project_id: str, req: Request) -> JSONResponse:
     """
     Get detailed cost analysis with timeline.
 
     Args:
         project_id: Project UUID
+        req: Request object for authentication context
 
     Returns:
-        Detailed cost analysis
+        Detailed cost analysis (RLS enforced)
     """
     try:
-        analysis = await sql_manager.get_cost_analysis(project_id)
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+        analysis = await manager.get_cost_analysis(project_id)
 
         return JSONResponse(content={
             "status": "success",
@@ -440,19 +496,22 @@ async def get_cost_analysis(project_id: str) -> JSONResponse:
 # ==================== Progress and Resume Endpoints ====================
 
 @router.get("/projects/{project_id}/progress")
-async def get_progress(project_id: str) -> JSONResponse:
+async def get_progress(project_id: str, req: Request) -> JSONResponse:
     """
     Get real-time progress with cost tracking.
 
     Args:
         project_id: Project UUID
+        req: Request object for authentication context
 
     Returns:
-        Progress information with costs
+        Progress information with costs (RLS enforced)
     """
     try:
-        progress = await sql_manager.get_progress(project_id)
-        costs = await sql_manager.get_cost_summary(project_id)
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+        progress = await manager.get_progress(project_id)
+        costs = await manager.get_cost_summary(project_id)
 
         return JSONResponse(content={
             "status": "success",
@@ -467,18 +526,21 @@ async def get_progress(project_id: str) -> JSONResponse:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/projects/{project_id}/resume")
-async def resume_project(project_id: str) -> JSONResponse:
+async def resume_project(project_id: str, req: Request) -> JSONResponse:
     """
     Resume a project with complete state restoration.
 
     Args:
         project_id: Project UUID
+        req: Request object for authentication context
 
     Returns:
-        Complete project state for resumption
+        Complete project state for resumption (RLS enforced)
     """
     try:
-        state = await sql_manager.resume_project(project_id)
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+        state = await manager.resume_project(project_id)
         if not state:
             raise HTTPException(status_code=404, detail="Project not found")
 
@@ -486,7 +548,7 @@ async def resume_project(project_id: str) -> JSONResponse:
         project_with_milestones = state["project"].copy()
         project_with_milestones["milestones"] = state["milestones"]
         logger.info(f"DEBUG: Added milestones to project. Keys in project object: {list(project_with_milestones.keys())}")
-        
+
         return JSONResponse(content={
             "status": "success",
             "project_id": project_id,
@@ -510,25 +572,29 @@ async def resume_project(project_id: str) -> JSONResponse:
 # ==================== Milestone Endpoints ====================
 
 @router.post("/projects/{project_id}/milestones")
-async def save_milestone(project_id: str, milestone: MilestoneData) -> JSONResponse:
+async def save_milestone(project_id: str, milestone: MilestoneData, req: Request) -> JSONResponse:
     """
     Save a milestone for a project.
 
     Args:
         project_id: Project UUID
         milestone: Milestone data
+        req: Request object for authentication context
 
     Returns:
-        Success status
+        Success status (RLS enforced)
     """
     try:
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+
         # Parse milestone type
         try:
             milestone_type = MilestoneType(milestone.type)
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid milestone type: {milestone.type}")
 
-        success = await sql_manager.save_milestone(
+        success = await manager.save_milestone(
             project_id=project_id,
             milestone_type=milestone_type,
             data=milestone.data,
@@ -550,25 +616,29 @@ async def save_milestone(project_id: str, milestone: MilestoneData) -> JSONRespo
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/projects/{project_id}/milestones/{milestone_type}")
-async def get_milestone(project_id: str, milestone_type: str) -> JSONResponse:
+async def get_milestone(project_id: str, milestone_type: str, req: Request) -> JSONResponse:
     """
     Get a specific milestone for a project.
 
     Args:
         project_id: Project UUID
         milestone_type: Milestone type
+        req: Request object for authentication context
 
     Returns:
-        Milestone data
+        Milestone data (RLS enforced)
     """
     try:
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+
         # Parse milestone type
         try:
             mt = MilestoneType(milestone_type)
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid milestone type: {milestone_type}")
 
-        milestone = await sql_manager.load_milestone(project_id, mt)
+        milestone = await manager.load_milestone(project_id, mt)
         if not milestone:
             raise HTTPException(status_code=404, detail="Milestone not found")
 
@@ -586,19 +656,22 @@ async def get_milestone(project_id: str, milestone_type: str) -> JSONResponse:
 # ==================== Export Endpoints ====================
 
 @router.get("/projects/{project_id}/export")
-async def export_project(project_id: str, format: str = "json") -> Any:
+async def export_project(project_id: str, req: Request, format: str = "json") -> Any:
     """
     Export project data in specified format.
 
     Args:
         project_id: Project UUID
+        req: Request object for authentication context
         format: Export format (json, markdown)
 
     Returns:
-        Exported data
+        Exported data (RLS enforced)
     """
     try:
-        data = await sql_manager.export_project(project_id, format=format)
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+        data = await manager.export_project(project_id, format=format)
         if not data:
             raise HTTPException(status_code=404, detail="Project not found")
 
@@ -619,24 +692,27 @@ async def export_project(project_id: str, format: str = "json") -> Any:
 # ==================== Backward Compatibility ====================
 
 @router.get("/projects/by-name/{project_name}")
-async def get_project_by_name(project_name: str) -> JSONResponse:
+async def get_project_by_name(project_name: str, req: Request) -> JSONResponse:
     """
     Get project by name (backward compatibility).
 
     Args:
         project_name: Project name
+        req: Request object for authentication context
 
     Returns:
-        Project details
+        Project details (RLS enforced)
     """
     try:
-        project = await sql_manager.get_project_by_name(project_name)
+        # Use authenticated manager for RLS enforcement
+        manager = _get_manager(req)
+        project = await manager.get_project_by_name(project_name)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
 
         # Add progress and cost
-        progress = await sql_manager.get_progress(project["id"])
-        cost_summary = await sql_manager.get_cost_summary(project["id"])
+        progress = await manager.get_progress(project["id"])
+        cost_summary = await manager.get_cost_summary(project["id"])
 
         project["progress"] = progress
         project["cost_summary"] = cost_summary

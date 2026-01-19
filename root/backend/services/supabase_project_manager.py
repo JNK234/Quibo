@@ -13,7 +13,7 @@ from datetime import datetime
 from enum import Enum
 import json
 
-from backend.config.supabase_client import get_supabase_client
+from backend.config.supabase_client import get_supabase_client, create_authenticated_client
 
 logger = logging.getLogger(__name__)
 
@@ -54,13 +54,25 @@ class SupabaseProjectManager:
     - Cloud-based PostgreSQL storage via Supabase
     """
 
-    def __init__(self):
+    def __init__(self, jwt_token: Optional[str] = None):
         """
         Initialize SupabaseProjectManager with Supabase client.
+
+        Args:
+            jwt_token: Optional JWT token for authenticated requests.
+                       When provided, creates a per-request client with user
+                       auth context for RLS enforcement. Falls back to
+                       singleton client for backward compatibility.
         """
-        self.supabase = get_supabase_client()
+        if jwt_token:
+            # Create authenticated client for RLS enforcement
+            self.supabase = create_authenticated_client(jwt_token)
+            logger.debug("SupabaseProjectManager initialized with authenticated client")
+        else:
+            # Fall back to singleton client (no user context)
+            self.supabase = get_supabase_client()
+            logger.debug("SupabaseProjectManager initialized with singleton client")
         self.project_locks = {}  # Per-project async locks
-        logger.info("SupabaseProjectManager initialized")
 
     async def _get_lock(self, project_id: str) -> asyncio.Lock:
         """Get or create a lock for a specific project."""

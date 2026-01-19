@@ -80,8 +80,17 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
 
 app = FastAPI(title="Agentic Blogging Assistant API")
 
-# Add CORS middleware - must be added before other middleware
-# Allow localhost for development and Cloud Run URL for production
+# Middleware order note: In Starlette/FastAPI, middleware runs in REVERSE order of addition.
+# So we add them in this order: Auth middlewares first, CORS last (so CORS runs first).
+
+# Add API key authentication middleware
+app.add_middleware(APIKeyAuthMiddleware)
+
+# Add Supabase JWT authentication middleware
+app.add_middleware(SupabaseAuthMiddleware)
+
+# Add CORS middleware LAST so it runs FIRST
+# This ensures OPTIONS preflight requests are handled before hitting auth
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -93,13 +102,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Add API key authentication middleware
-app.add_middleware(APIKeyAuthMiddleware)
-
-# Add Supabase JWT authentication middleware
-# This runs AFTER API key middleware, so both can work together
-app.add_middleware(SupabaseAuthMiddleware)
 
 # Constants
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))

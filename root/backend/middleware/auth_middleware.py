@@ -50,6 +50,9 @@ class SupabaseAuthMiddleware(BaseHTTPMiddleware):
 
         token = auth_header.replace("Bearer ", "")
 
+        # Store raw token for Supabase client authentication (RLS enforcement)
+        request.state.token = token
+
         try:
             # Verify token with Supabase
             supabase = create_client(self.supabase_url, self.supabase_anon_key)

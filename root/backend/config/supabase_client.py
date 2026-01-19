@@ -71,3 +71,47 @@ def reset_supabase_client():
     global _supabase_client
     _supabase_client = None
     logger.info("Supabase client reset")
+
+
+def create_authenticated_client(jwt_token: str):
+    """
+    Create a Supabase client with user JWT for RLS enforcement.
+
+    This creates a per-request client that sets the user's authentication context,
+    allowing Supabase RLS policies (e.g., auth.uid() = user_id) to work correctly.
+
+    Args:
+        jwt_token: The user's JWT token from Supabase Auth
+
+    Returns:
+        Supabase client with user session set
+
+    Raises:
+        ValueError: If SUPABASE_URL or SUPABASE_ANON_KEY not set
+    """
+    try:
+        from supabase import create_client
+    except ImportError:
+        raise ImportError(
+            "supabase package not installed. Install with: pip install supabase"
+        )
+
+    url = os.getenv("SUPABASE_URL")
+    # Support both SUPABASE_ANON_KEY and SUPABASE_KEY for compatibility
+    anon_key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_KEY")
+
+    if not url:
+        raise ValueError("SUPABASE_URL not set in environment")
+
+    if not anon_key:
+        raise ValueError("SUPABASE_ANON_KEY not set in environment")
+
+    # Create client with anon key (required for initial connection)
+    client = create_client(url, anon_key)
+
+    # Set the user's session to establish auth context for RLS
+    # The refresh_token can be empty string since we're using access_token directly
+    client.auth.set_session(jwt_token, "")
+
+    logger.debug("Created authenticated Supabase client for RLS enforcement")
+    return client
