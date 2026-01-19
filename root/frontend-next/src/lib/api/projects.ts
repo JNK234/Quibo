@@ -3,6 +3,7 @@
 
 import { apiClient } from "./client"
 import { Project, CreateProjectRequest, ProjectStatusResponse } from "@/types/project"
+import { ResumeProjectResponse } from "@/types/workflow"
 
 export async function createProject(data: CreateProjectRequest): Promise<Project> {
   return apiClient<Project>("/api/v2/projects", {
@@ -34,4 +35,8 @@ export async function deleteProject(id: string): Promise<void> {
 
 export async function getProjectStatus(id: string): Promise<ProjectStatusResponse> {
   return apiClient<ProjectStatusResponse>(`/project_status/${id}`)
+}
+
+export async function resumeProject(id: string): Promise<ResumeProjectResponse> {
+  return apiClient<ResumeProjectResponse>(`/resume/${id}`)
 }

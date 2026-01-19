@@ -1,11 +1,11 @@
-// ABOUTME: Client component for dashboard content with animations
-// ABOUTME: Shows welcome message, stats, project list, and modals
+// ABOUTME: Client component for dashboard content with premium animations
+// ABOUTME: Shows welcome message, stats, project list, and modals with billion-dollar aesthetic
 
 "use client"
 
 import { motion } from "framer-motion"
 import { User } from "@supabase/supabase-js"
-import { Plus } from "lucide-react"
+import { Plus, FileText, CheckCircle2, Calendar, FolderOpen } from "lucide-react"
 import { ProjectList } from "@/components/dashboard/project-list"
 import { NewProjectModal } from "@/components/dashboard/new-project-modal"
 import { DeleteProjectDialog } from "@/components/dashboard/delete-project-dialog"
@@ -39,68 +39,95 @@ export function DashboardContent({ user }: DashboardContentProps) {
   }).length ?? 0
 
   const stats = [
-    { label: "Projects", value: String(totalProjects) },
-    { label: "Drafts", value: String(drafts) },
-    { label: "Published", value: String(published) },
-    { label: "This Month", value: String(thisMonth) },
+    { label: "Projects", value: String(totalProjects), icon: FolderOpen, color: "text-blue-400" },
+    { label: "Drafts", value: String(drafts), icon: FileText, color: "text-amber-400" },
+    { label: "Published", value: String(published), icon: CheckCircle2, color: "text-emerald-400" },
+    { label: "This Month", value: String(thisMonth), icon: Calendar, color: "text-purple-400" },
   ]
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       {/* Welcome Section */}
       <motion.div
-        initial={{ opacity: 0, y: -10 }}
+        initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="flex items-center justify-between"
+        transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+        className="flex flex-col sm:flex-row sm:items-end justify-between gap-4"
       >
-        <div className="space-y-1">
-          <h1 className="font-serif text-3xl md:text-4xl font-semibold tracking-tight">
-            Welcome back, {firstName}
+        <div className="space-y-2">
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="text-sm font-medium text-muted-foreground tracking-wide uppercase"
+          >
+            Welcome back
+          </motion.p>
+          <h1 className="font-serif text-4xl md:text-5xl font-semibold tracking-tight">
+            {firstName}
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground text-lg">
             Your AI-powered blogging workspace
           </p>
         </div>
-        <Button
-          onClick={openNewProjectModal}
-          className="gradient-warm border-0 text-white hover:opacity-90"
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.3 }}
         >
-          <Plus className="w-4 h-4 mr-2" />
-          New Project
-        </Button>
+          <Button
+            onClick={openNewProjectModal}
+            size="lg"
+            className="gradient-warm border-0 text-white hover:opacity-90 btn-shine shadow-lg shadow-amber-500/20"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            New Project
+          </Button>
+        </motion.div>
       </motion.div>
 
-      {/* Quick Stats */}
+      {/* Quick Stats - Premium Glass Cards */}
       <motion.div
-        initial={{ opacity: 0, y: 10 }}
+        initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1, duration: 0.4 }}
-        className="grid grid-cols-2 md:grid-cols-4 gap-4"
+        transition={{ delay: 0.15, duration: 0.5 }}
+        className="grid grid-cols-2 lg:grid-cols-4 gap-4"
       >
-        {stats.map((stat, i) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.2 + i * 0.05, duration: 0.3 }}
-            className="p-4 rounded-lg bg-card border border-border/50"
-          >
-            <p className="text-2xl font-serif font-semibold">{stat.value}</p>
-            <p className="text-sm text-muted-foreground">{stat.label}</p>
-          </motion.div>
-        ))}
+        {stats.map((stat, i) => {
+          const Icon = stat.icon
+          return (
+            <motion.div
+              key={stat.label}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 + i * 0.08, duration: 0.4 }}
+              whileHover={{ scale: 1.02 }}
+              className="stat-card p-5 rounded-xl cursor-default"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className={`p-2 rounded-lg bg-white/5 ${stat.color}`}>
+                  <Icon className="w-5 h-5" />
+                </div>
+              </div>
+              <p className="text-3xl font-semibold tracking-tight mb-1">{stat.value}</p>
+              <p className="text-sm text-muted-foreground font-medium">{stat.label}</p>
+            </motion.div>
+          )
+        })}
       </motion.div>
 
       {/* Projects Section */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 0.3, duration: 0.4 }}
-        className="space-y-4"
+        transition={{ delay: 0.4, duration: 0.5 }}
+        className="space-y-6"
       >
         <div className="flex items-center justify-between">
-          <h2 className="font-serif text-xl font-medium">Your Projects</h2>
+          <h2 className="font-serif text-2xl font-medium tracking-tight">Your Projects</h2>
+          <p className="text-sm text-muted-foreground">
+            {totalProjects} {totalProjects === 1 ? 'project' : 'projects'}
+          </p>
         </div>
 
         <ProjectList />
