@@ -8,10 +8,10 @@ import { motion } from "framer-motion"
 import { formatDistanceToNow } from "date-fns"
 import { Button } from "@/components/ui/button"
 import { FileText, Trash2, ArrowUpRight, Clock } from "lucide-react"
-import { Project, WorkflowStage } from "@/types/project"
+import { Project } from "@/types/project"
 import { useUIStore } from "@/store/ui-store"
 
-const statusConfig: Record<WorkflowStage, { color: string; bgColor: string; label: string }> = {
+const statusConfig: Record<string, { color: string; bgColor: string; label: string }> = {
   upload: { color: "text-slate-400", bgColor: "bg-slate-400/10", label: "Upload" },
   outline: { color: "text-blue-400", bgColor: "bg-blue-400/10", label: "Outline" },
   drafting: { color: "text-amber-400", bgColor: "bg-amber-400/10", label: "Drafting" },
@@ -19,6 +19,8 @@ const statusConfig: Record<WorkflowStage, { color: string; bgColor: string; labe
   social: { color: "text-cyan-400", bgColor: "bg-cyan-400/10", label: "Social" },
   complete: { color: "text-emerald-400", bgColor: "bg-emerald-400/10", label: "Complete" },
 }
+
+const defaultStatus = { color: "text-slate-400", bgColor: "bg-slate-400/10", label: "Unknown" }
 
 interface ProjectListItemProps {
   project: Project
@@ -43,7 +45,7 @@ export function ProjectListItem({ project, index }: ProjectListItemProps) {
       ? Math.round((project.completedSections / project.sectionCount) * 100)
       : 0
 
-  const status = statusConfig[project.workflowStage]
+  const status = statusConfig[project.workflowStage] || defaultStatus
 
   return (
     <motion.div
@@ -96,7 +98,11 @@ export function ProjectListItem({ project, index }: ProjectListItemProps) {
             {/* Timestamp */}
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
               <Clock className="w-3 h-3" />
-              <span>Updated {formatDistanceToNow(new Date(project.updatedAt), { addSuffix: true })}</span>
+              <span>
+                Updated {project.updatedAt
+                  ? formatDistanceToNow(new Date(project.updatedAt), { addSuffix: true })
+                  : "recently"}
+              </span>
             </div>
           </div>
 
