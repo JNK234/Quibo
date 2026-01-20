@@ -2,7 +2,7 @@
 // ABOUTME: Fetches project status and routes to appropriate workflow tab
 
 import { redirect } from "next/navigation"
-import { getProjectStatus, getProject } from "@/lib/api/projects"
+import { getProjectStatusServer, getProjectServer } from "@/lib/api/projects-server"
 
 interface ProjectPageProps {
   params: Promise<{ id: string }>
@@ -20,20 +20,22 @@ const STAGE_TO_PATH: Record<string, string> = {
 export default async function ProjectPage({ params }: ProjectPageProps) {
   const { id } = await params
 
+  // Try to get project status first for accurate stage
+  let path = "upload"
+
   try {
-    // Try to get project status first for accurate stage
-    const status = await getProjectStatus(id)
-    const path = STAGE_TO_PATH[status.currentStage] ?? "upload"
-    redirect(`/project/${id}/${path}`)
+    const status = await getProjectStatusServer(id)
+    path = STAGE_TO_PATH[status.currentStage] ?? "upload"
   } catch {
-    // Fall back to project data if status fails
+    // Status endpoint failed, try project data
     try {
-      const project = await getProject(id)
-      const path = STAGE_TO_PATH[project.workflowStage] ?? "upload"
-      redirect(`/project/${id}/${path}`)
+      const project = await getProjectServer(id)
+      path = STAGE_TO_PATH[project.workflowStage] ?? "upload"
     } catch {
       // Default to upload if all else fails
-      redirect(`/project/${id}/upload`)
+      path = "upload"
     }
   }
+
+  redirect(`/project/${id}/${path}`)
 }

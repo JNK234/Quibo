@@ -5,25 +5,30 @@ import { apiClient } from "./client"
 import { Project, CreateProjectRequest, ProjectStatusResponse, WorkflowStage } from "@/types/project"
 import { ResumeProjectResponse } from "@/types/workflow"
 
-// API response shape (snake_case from backend)
+// API response shape (after camelCase transformation by apiClient)
+// Note: progress can be number (list endpoint) or object (single project endpoint)
 interface APIProject {
   id: string
   name: string
   status: "active" | "archived" | "deleted"
-  created_at: string
-  updated_at: string
-  archived_at: string | null
-  completed_at: string | null
+  createdAt: string
+  updatedAt: string
+  archivedAt: string | null
+  completedAt: string | null
   metadata: {
     persona?: string
-    model_name?: string
-    uploaded_files?: string[]
-    upload_directory?: string
-    cost_summary?: Record<string, unknown>
-    progress?: number
+    modelName?: string
+    uploadedFiles?: string[]
+    uploadDirectory?: string
+    costSummary?: Record<string, unknown>
   } | null
-  progress: number
-  total_cost: number
+  progress: number | { percentage: number; milestones?: Record<string, unknown>; sections?: { completed: number; total: number } }
+  totalCost: number
+}
+
+interface GetProjectResponse {
+  status: string
+  project: APIProject
 }
 
 // Map progress percentage to workflow stage
@@ -36,20 +41,27 @@ function getWorkflowStage(progress: number, completedAt: string | null): Workflo
   return "upload"
 }
 
+// Extract progress percentage from API response (handles both number and object formats)
+function getProgressPercentage(progress: APIProject["progress"]): number {
+  if (typeof progress === "number") return progress
+  return progress?.percentage ?? 0
+}
+
 // Transform API response to frontend Project type
 function transformProject(apiProject: APIProject): Project {
-  const progress = apiProject.progress ?? 0
+  const progress = getProgressPercentage(apiProject.progress)
+  const sections = typeof apiProject.progress === "object" ? apiProject.progress?.sections : null
   const now = new Date().toISOString()
   return {
     id: apiProject.id,
     name: apiProject.name,
     description: null,
     status: apiProject.status,
-    workflowStage: getWorkflowStage(progress, apiProject.completed_at),
-    sectionCount: 0,
-    completedSections: 0,
-    createdAt: apiProject.created_at || now,
-    updatedAt: apiProject.updated_at || now,
+    workflowStage: getWorkflowStage(progress, apiProject.completedAt),
+    sectionCount: sections?.total ?? 0,
+    completedSections: sections?.completed ?? 0,
+    createdAt: apiProject.createdAt || now,
+    updatedAt: apiProject.updatedAt || now,
     userId: "",
   }
 }
@@ -74,8 +86,8 @@ export async function getProjects(): Promise<Project[]> {
 }
 
 export async function getProject(id: string): Promise<Project> {
-  const response = await apiClient<APIProject>(`/api/v2/projects/${id}`)
-  return transformProject(response)
+  const response = await apiClient<GetProjectResponse>(`/api/v2/projects/${id}`)
+  return transformProject(response.project)
 }
 
 export async function deleteProject(id: string): Promise<void> {
