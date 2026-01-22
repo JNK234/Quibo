@@ -1,23 +1,14 @@
 // ABOUTME: React Query provider wrapper for the application
-// ABOUTME: Configures QueryClient with default stale times and refetch behavior
+// ABOUTME: Uses createQueryClient with error retry configuration from query-client.tsx
 
 "use client"
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { QueryClientProvider } from "@tanstack/react-query"
 import { useState } from "react"
+import { createQueryClient } from "@/lib/query-client"
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: 5 * 60 * 1000, // 5 minutes
-            refetchOnWindowFocus: false,
-          },
-        },
-      })
-  )
+  const [queryClient] = useState(() => createQueryClient())
 
   return (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
