@@ -200,3 +200,19 @@ export interface UploadedFile {
   size: number
   type: string
 }
+
+// --- Operation Status Types ---
+
+export interface OperationError {
+  message: string // User-friendly message
+  details?: string // Technical details (expandable)
+  code?: string // Error code for categorization
+  retryable: boolean // Whether retry makes sense
+}
+
+export interface OperationStatus {
+  isLoading: boolean
+  loadingMessage: string | null
+  error: OperationError | null
+  retryCount: number
+}
