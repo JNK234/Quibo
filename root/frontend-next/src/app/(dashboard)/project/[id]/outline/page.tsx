@@ -22,6 +22,7 @@ import {
 import { useGenerateOutline } from "@/lib/queries/workflow-queries"
 import { useProject } from "@/lib/queries/project-queries"
 import { OutlineEditor } from "@/components/project/outline-editor"
+import { InlineError } from "@/components/shared/inline-error"
 import { OutlineData, GenerateOutlineRequest } from "@/types/workflow"
 
 interface OutlinePageProps {
@@ -217,18 +218,12 @@ export default function OutlinePage({ params }: OutlinePageProps) {
 
                 {/* Error Display */}
                 {generateOutlineMutation.isError && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-4 rounded-lg bg-destructive/10 border border-destructive/20"
-                  >
-                    <p className="text-sm text-destructive">
-                      Failed to generate outline. Please try again.
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {generateOutlineMutation.error?.message}
-                    </p>
-                  </motion.div>
+                  <InlineError
+                    message="Failed to generate outline. Please try again."
+                    details={generateOutlineMutation.error?.message}
+                    onRetry={handleGenerateOutline}
+                    onDismiss={() => generateOutlineMutation.reset()}
+                  />
                 )}
               </CardContent>
             </Card>

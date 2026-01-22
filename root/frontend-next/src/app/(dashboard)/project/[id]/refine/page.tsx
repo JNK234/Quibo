@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { useRefineBlog } from "@/lib/queries/workflow-queries"
 import { useResumeProject } from "@/lib/queries/workflow-queries"
+import { InlineError } from "@/components/shared/inline-error"
 import { TitleOption } from "@/types/workflow"
 
 interface RefinePageProps {
@@ -142,18 +143,12 @@ export default function RefinePage({ params }: RefinePageProps) {
 
             {/* Error Display */}
             {refineBlogMutation.isError && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-4 rounded-lg bg-destructive/10 border border-destructive/20"
-              >
-                <p className="text-sm text-destructive">
-                  Failed to refine blog. Please try again.
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {refineBlogMutation.error?.message}
-                </p>
-              </motion.div>
+              <InlineError
+                message="Failed to refine blog. Please try again."
+                details={refineBlogMutation.error?.message}
+                onRetry={handleRefineBlog}
+                onDismiss={() => refineBlogMutation.reset()}
+              />
             )}
           </motion.div>
         ) : (
