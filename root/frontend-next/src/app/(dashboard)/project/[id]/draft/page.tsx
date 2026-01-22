@@ -17,6 +17,7 @@ import {
   useProjectStatus,
 } from "@/lib/queries/workflow-queries"
 import { useProject } from "@/lib/queries/project-queries"
+import { InlineError } from "@/components/shared/inline-error"
 
 interface DraftPageProps {
   params: Promise<{ id: string }>
@@ -43,6 +44,8 @@ export default function DraftPage({ params }: DraftPageProps) {
 
   const [sections, setSections] = useState<SectionState[]>([])
   const [generatingSectionIndex, setGeneratingSectionIndex] = useState<number | null>(null)
+  const [sectionError, setSectionError] = useState<{ message: string; details?: string; sectionIndex: number } | null>(null)
+  const [compileError, setCompileError] = useState<string | null>(null)
 
   // Initialize sections from project status
   useEffect(() => {
@@ -82,7 +85,12 @@ export default function DraftPage({ params }: DraftPageProps) {
 
         await refetchStatus()
       } catch (error) {
-        console.error("Failed to generate section:", error)
+        const errorMessage = error instanceof Error ? error.message : "Unknown error"
+        setSectionError({
+          message: `Failed to generate section ${sectionIndex + 1}`,
+          details: errorMessage,
+          sectionIndex,
+        })
         setSections((prev) =>
           prev.map((s) => (s.index === sectionIndex ? { ...s, status: "pending" } : s))
         )
@@ -98,7 +106,8 @@ export default function DraftPage({ params }: DraftPageProps) {
       await compileDraftMutation.mutateAsync()
       router.push(`/project/${id}/refine`)
     } catch (error) {
-      console.error("Failed to compile draft:", error)
+      const errorMessage = error instanceof Error ? error.message : "Unknown error"
+      setCompileError(errorMessage)
     }
   }, [compileDraftMutation, router, id])
 
@@ -141,6 +150,19 @@ export default function DraftPage({ params }: DraftPageProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Section Error Display */}
+      {sectionError && (
+        <InlineError
+          message={sectionError.message}
+          details={sectionError.details}
+          onRetry={() => {
+            setSectionError(null)
+            handleGenerateSection(sectionError.sectionIndex)
+          }}
+          onDismiss={() => setSectionError(null)}
+        />
+      )}
 
       {/* Sections List */}
       <div className="space-y-4">
@@ -227,6 +249,19 @@ export default function DraftPage({ params }: DraftPageProps) {
           </motion.div>
         ))}
       </div>
+
+      {/* Compile Error Display */}
+      {compileError && (
+        <InlineError
+          message="Failed to compile draft. Please try again."
+          details={compileError}
+          onRetry={() => {
+            setCompileError(null)
+            handleCompileDraft()
+          }}
+          onDismiss={() => setCompileError(null)}
+        />
+      )}
 
       {/* Compile Draft Button */}
       <AnimatePresence>
