@@ -51,21 +51,31 @@ export function ProgressStepper({
   }
 
   return (
-    <div className={cn("w-full px-4 py-4", className)}>
-      {/* Progress bar container */}
+    <div className={cn("w-full px-6 py-4", className)}>
+      {/* Step markers row with connecting progress bar */}
       <div className="relative">
-        {/* Background track */}
-        <div className="absolute top-1/2 left-0 right-0 h-2 -translate-y-1/2 bg-muted rounded-full" />
+        {/* Progress bar track - positioned to align with center of step circles */}
+        {/* Inset from edges so bar connects between circle centers, not edges */}
+        <div
+          className="absolute top-4 h-1 bg-muted rounded-full"
+          style={{
+            left: 'calc(0% + 16px)',  // Start from center of first circle (32px/2)
+            right: 'calc(0% + 16px)'  // End at center of last circle
+          }}
+        />
 
         {/* Filled progress bar */}
         <motion.div
-          className="absolute top-1/2 left-0 h-2 -translate-y-1/2 bg-primary rounded-full"
+          className="absolute top-4 h-1 bg-primary rounded-full"
+          style={{ left: 'calc(0% + 16px)' }}
           initial={{ width: 0 }}
-          animate={{ width: `${progressPercent}%` }}
+          animate={{
+            width: `calc(${progressPercent}% - ${progressPercent > 0 ? '32px' : '0px'})`
+          }}
           transition={{ duration: 0.4, ease: "easeOut" }}
         />
 
-        {/* Step markers positioned along the bar */}
+        {/* Step markers */}
         <div className="relative flex justify-between">
           {steps.map((step, index) => {
             const state = getStepState(index)
@@ -86,21 +96,14 @@ export function ProgressStepper({
                       "border-primary bg-primary text-primary-foreground cursor-pointer hover:ring-2 hover:ring-primary/30 hover:ring-offset-2",
                     // Current: highlighted with pulsing animation
                     state === "current" &&
-                      "border-primary bg-background text-primary cursor-default",
+                      "border-primary bg-primary text-primary-foreground cursor-default",
                     // Future: muted/disabled
                     state === "future" &&
-                      "border-muted-foreground/30 bg-background text-muted-foreground/30 cursor-not-allowed"
+                      "border-muted/50 bg-card text-muted-foreground cursor-not-allowed"
                   )}
                 >
                   {/* Step number inside marker */}
-                  <span
-                    className={cn(
-                      "text-sm font-medium",
-                      state === "completed" && "text-primary-foreground",
-                      state === "current" && "text-primary",
-                      state === "future" && "text-muted-foreground/30"
-                    )}
-                  >
+                  <span className="text-sm font-semibold">
                     {index + 1}
                   </span>
 
@@ -111,7 +114,7 @@ export function ProgressStepper({
                       initial={{ opacity: 0.6, scale: 1 }}
                       animate={{
                         opacity: [0.6, 0],
-                        scale: [1, 1.4],
+                        scale: [1, 1.5],
                       }}
                       transition={{
                         duration: 1.5,
@@ -125,10 +128,10 @@ export function ProgressStepper({
                 {/* Step label below marker */}
                 <span
                   className={cn(
-                    "mt-2 text-xs font-medium text-center max-w-[80px] transition-colors duration-200",
+                    "mt-2 text-xs font-medium transition-colors duration-200",
                     state === "completed" && "text-foreground",
                     state === "current" && "text-primary font-semibold",
-                    state === "future" && "text-muted-foreground/50"
+                    state === "future" && "text-muted-foreground"
                   )}
                 >
                   {step.label}
