@@ -67,6 +67,7 @@ class BlogRefinementAgent(BaseGraphAgent):
     async def refine_blog_with_graph(
         self,
         blog_draft: str,
+        persona_name: Optional[str] = None,
         cost_aggregator=None,
         project_id: Optional[str] = None,
         title_config: Optional[TitleGenerationConfig] = None,
@@ -97,6 +98,7 @@ class BlogRefinementAgent(BaseGraphAgent):
             original_draft=blog_draft,
             model=self.model,
             persona_service=self.persona_service,
+            persona_name=persona_name or "neuraforge",
             cost_aggregator=cost_aggregator,
             project_id=project_id,
             current_stage="refinement",
@@ -147,9 +149,18 @@ class BlogRefinementAgent(BaseGraphAgent):
 
             logger.info("Blog refinement process completed successfully via graph.")
 
+            # Debug: Log what we got from the state
+            logger.info(f"Final state keys: {list(final_state_dict.keys())}")
+            logger.info(f"formatted_draft present: {'formatted_draft' in final_state_dict}")
+            logger.info(f"formatted_draft value: {final_state_dict.get('formatted_draft', 'MISSING')[:200] if final_state_dict.get('formatted_draft') else 'None'}")
+            logger.info(f"formatting_skipped: {final_state_dict.get('formatting_skipped', 'MISSING')}")
+
             # Construct and return the final result object using data from the state dictionary
             return RefinementResult(
                 refined_draft=final_state_dict['refined_draft'],
+                formatted_draft=final_state_dict.get('formatted_draft'),
+                formatting_skipped=final_state_dict.get('formatting_skipped', False),
+                formatting_skip_reason=final_state_dict.get('formatting_skip_reason'),
                 summary=final_state_dict['summary'],
                 title_options=parsed_title_options
             )
