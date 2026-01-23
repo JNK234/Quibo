@@ -10,9 +10,10 @@ import { Upload, Loader2, CheckCircle } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useProject } from "@/lib/queries/project-queries"
-import { useUploadFiles, useProcessFiles } from "@/lib/queries/workflow-queries"
+import { useProcessFiles } from "@/lib/queries/workflow-queries"
 import { FileUploader } from "@/components/project/file-uploader"
 import { InlineError } from "@/components/shared/inline-error"
+import { useFileUpload } from "@/hooks/use-file-upload"
 
 interface UploadPageProps {
   params: Promise<{ id: string }>
@@ -26,13 +27,31 @@ export default function UploadPage({ params }: UploadPageProps) {
   // Local state for tracking workflow
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [uploadedFilePaths, setUploadedFilePaths] = useState<string[]>([])
-  const [isUploading, setIsUploading] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastFailedOperation, setLastFailedOperation] = useState<"upload" | "process" | null>(null)
 
-  // Mutations
-  const uploadMutation = useUploadFiles()
+  // File upload with progress tracking
+  const {
+    upload,
+    isUploading,
+    progress: uploadProgress,
+    reset: resetUpload,
+  } = useFileUpload({
+    projectName: project?.name || "",
+    modelName: "gpt-4o-mini",
+    onSuccess: (response) => {
+      setUploadedFilePaths(response.files)
+      setSelectedFiles([])
+      setError(null)
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Failed to upload files. Please try again.")
+      setLastFailedOperation("upload")
+    },
+  })
+
+  // Process files mutation
   const processMutation = useProcessFiles(project?.name || "")
 
   const handleFilesSelected = (files: File[]) => {
@@ -40,26 +59,10 @@ export default function UploadPage({ params }: UploadPageProps) {
     setError(null)
   }
 
-  const handleUploadFiles = async () => {
+  const handleUploadFiles = () => {
     if (selectedFiles.length === 0 || !project?.name) return
-
-    setIsUploading(true)
     setError(null)
-
-    try {
-      const response = await uploadMutation.mutateAsync({
-        projectName: project.name,
-        files: selectedFiles,
-        modelName: "gpt-4o-mini",
-      })
-      setUploadedFilePaths(response.files)
-      setSelectedFiles([])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to upload files. Please try again.")
-      setLastFailedOperation("upload")
-    } finally {
-      setIsUploading(false)
-    }
+    upload(selectedFiles)
   }
 
   const handleProcessFiles = async () => {
@@ -110,6 +113,7 @@ export default function UploadPage({ params }: UploadPageProps) {
           onRetry={() => {
             setError(null)
             if (lastFailedOperation === "upload") {
+              resetUpload()
               handleUploadFiles()
             } else {
               handleProcessFiles()
@@ -118,6 +122,9 @@ export default function UploadPage({ params }: UploadPageProps) {
           onDismiss={() => {
             setError(null)
             setLastFailedOperation(null)
+            if (lastFailedOperation === "upload") {
+              resetUpload()
+            }
           }}
         />
       )}
@@ -153,7 +160,11 @@ export default function UploadPage({ params }: UploadPageProps) {
             {isUploading ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Uploading...
+                {uploadProgress > 0 && uploadProgress < 100
+                  ? `Uploading... ${uploadProgress}%`
+                  : uploadProgress === 100
+                    ? "Completing..."
+                    : "Uploading..."}
               </>
             ) : (
               <>
