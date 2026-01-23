@@ -102,6 +102,8 @@ export default function UploadPage({ params }: UploadPageProps) {
           existingFiles={uploadedFilePaths.map((path) =>
             path.split("/").pop() || path
           )}
+          uploadProgress={uploadProgress}
+          isUploading={isUploading}
         />
       </motion.div>
 
@@ -160,11 +162,7 @@ export default function UploadPage({ params }: UploadPageProps) {
             {isUploading ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                {uploadProgress > 0 && uploadProgress < 100
-                  ? `Uploading... ${uploadProgress}%`
-                  : uploadProgress === 100
-                    ? "Completing..."
-                    : "Uploading..."}
+                Uploading...
               </>
             ) : (
               <>
