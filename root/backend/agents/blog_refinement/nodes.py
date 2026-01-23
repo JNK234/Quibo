@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""
-Node functions for the Blog Refinement Agent's LangGraph.
-"""
+# ABOUTME: This file contains LangGraph node functions used to refine and format compiled blog drafts.
+# ABOUTME: It orchestrates intro/conclusion/summary/title generation plus formatting + validation retry loops.
+"""Node functions for the Blog Refinement Agent's LangGraph."""
+import asyncio
 import logging
 import json
 from typing import Dict, Any, List, Optional
@@ -14,9 +15,13 @@ from backend.agents.blog_refinement.prompts import (
     GENERATE_CONCLUSION_PROMPT,
     GENERATE_SUMMARY_PROMPT,
     GENERATE_TITLES_PROMPT,
-    SUGGEST_CLARITY_FLOW_IMPROVEMENTS_PROMPT, # Import the new prompt
-    REDUCE_REDUNDANCY_PROMPT  # Import the redundancy reduction prompt
+    SUGGEST_CLARITY_FLOW_IMPROVEMENTS_PROMPT,
+    STRUCTURE_ANALYSIS_PROMPT
 )
+from backend.agents.blog_refinement.formatting_prompts import (
+    get_formatting_prompt
+)
+from backend.agents.blog_refinement.llm_text import coerce_llm_output_to_text
 from backend.agents.blog_refinement.prompt_builder import build_title_generation_prompt
 from backend.agents.blog_refinement.validation import (
     validate_title_generation,
@@ -24,6 +29,7 @@ from backend.agents.blog_refinement.validation import (
 )
 from backend.models.generation_config import TitleGenerationConfig
 from backend.services.supabase_project_manager import MilestoneType
+from backend.services.persona_service import PersonaService
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +43,25 @@ async def generate_introduction_node(state: BlogRefinementState) -> Dict[str, An
     # Access Pydantic model fields directly
     if state.error: return {"error": state.error}
 
+    # Get persona instructions
+    persona_service = PersonaService()
+    persona_name = getattr(state, 'persona_name', 'neuraforge')
+    persona_instructions = persona_service.get_persona_prompt(persona_name)
+    logger.info(f"Using persona: {persona_name} for introduction generation")
+
     try:
         if not state.model:
             raise ValueError("Refinement state is missing model reference")
 
-        prompt = GENERATE_INTRODUCTION_PROMPT.format(blog_draft=state.original_draft)
+        prompt = GENERATE_INTRODUCTION_PROMPT.format(
+            persona_instructions=persona_instructions,
+            blog_draft=state.original_draft
+        )
         response = await state.model.ainvoke(prompt)
-        if isinstance(response, str) and response.strip():
+        response_text = coerce_llm_output_to_text(response).strip()
+        if response_text:
             logger.info("Introduction generated successfully.")
-            return {"introduction": response.strip()}
+            return {"introduction": response_text}
         else:
             logger.warning(f"Introduction generation returned empty/invalid response: {response}")
             # Ensure error key is returned
@@ -64,15 +80,25 @@ async def generate_conclusion_node(state: BlogRefinementState) -> Dict[str, Any]
     # Access Pydantic model fields directly
     if state.error: return {"error": state.error}
 
+    # Get persona instructions
+    persona_service = PersonaService()
+    persona_name = getattr(state, 'persona_name', 'neuraforge')
+    persona_instructions = persona_service.get_persona_prompt(persona_name)
+    logger.info(f"Using persona: {persona_name} for conclusion generation")
+
     try:
         if not state.model:
             raise ValueError("Refinement state is missing model reference")
 
-        prompt = GENERATE_CONCLUSION_PROMPT.format(blog_draft=state.original_draft)
+        prompt = GENERATE_CONCLUSION_PROMPT.format(
+            persona_instructions=persona_instructions,
+            blog_draft=state.original_draft
+        )
         response = await state.model.ainvoke(prompt)
-        if isinstance(response, str) and response.strip():
+        response_text = coerce_llm_output_to_text(response).strip()
+        if response_text:
             logger.info("Conclusion generated successfully.")
-            return {"conclusion": response.strip()}
+            return {"conclusion": response_text}
         else:
             logger.warning(f"Conclusion generation returned empty/invalid response: {response}")
             return {"error": "Failed to generate valid conclusion."}
@@ -88,15 +114,25 @@ async def generate_summary_node(state: BlogRefinementState) -> Dict[str, Any]:
     # Access Pydantic model fields directly
     if state.error: return {"error": state.error}
 
+    # Get persona instructions
+    persona_service = PersonaService()
+    persona_name = getattr(state, 'persona_name', 'neuraforge')
+    persona_instructions = persona_service.get_persona_prompt(persona_name)
+    logger.info(f"Using persona: {persona_name} for summary generation")
+
     try:
         if not state.model:
             raise ValueError("Refinement state is missing model reference")
 
-        prompt = GENERATE_SUMMARY_PROMPT.format(blog_draft=state.original_draft)
+        prompt = GENERATE_SUMMARY_PROMPT.format(
+            persona_instructions=persona_instructions,
+            blog_draft=state.original_draft
+        )
         response = await state.model.ainvoke(prompt)
-        if isinstance(response, str) and response.strip():
+        response_text = coerce_llm_output_to_text(response).strip()
+        if response_text:
             logger.info("Summary generated successfully.")
-            return {"summary": response.strip()}
+            return {"summary": response_text}
         else:
             logger.warning(f"Summary generation returned empty/invalid response: {response}")
             return {"error": "Failed to generate valid summary."}
@@ -132,12 +168,14 @@ async def generate_titles_node(state: BlogRefinementState) -> Dict[str, Any]:
         # Initial generation attempt
         response = await state.model.ainvoke(prompt)
 
+        response_text = coerce_llm_output_to_text(response)
+
         # Clean and parse JSON
-        cleaned_response = response.strip()
+        cleaned_response = response_text.strip()
         
         # Enhanced debugging
-        logger.info(f"Raw model response: '{response}'")
-        logger.info(f"Response length: {len(response)}")
+        logger.info(f"Raw model response: '{response_text}'")
+        logger.info(f"Response length: {len(response_text)}")
         logger.info(f"Response type: {type(response)}")
         
         # Handle empty response
@@ -267,8 +305,10 @@ async def generate_titles_node(state: BlogRefinementState) -> Dict[str, Any]:
                 logger.info("Attempting to correct title generation with feedback")
                 retry_response = await state.model.ainvoke(correction_prompt)
 
+                retry_text = coerce_llm_output_to_text(retry_response)
+
                 # Parse retry response
-                cleaned_retry = retry_response.strip()
+                cleaned_retry = retry_text.strip()
                 if cleaned_retry.startswith("```json"):
                     cleaned_retry = cleaned_retry[7:]
                 if cleaned_retry.endswith("```"):
@@ -294,7 +334,9 @@ async def generate_titles_node(state: BlogRefinementState) -> Dict[str, Any]:
             return {"title_options": validated_options}
 
         except (json.JSONDecodeError, ValueError) as parse_err:
-            logger.error(f"Failed to parse title options: {parse_err}. Raw response: '{response}', Cleaned: '{cleaned_response}'")
+            logger.error(
+                f"Failed to parse title options: {parse_err}. Raw response: '{response_text}', Cleaned: '{cleaned_response}'"
+            )
             # Create fallback title options on parse error
             fallback_options = [
                 {
@@ -343,9 +385,10 @@ async def suggest_clarity_flow_node(state: BlogRefinementState) -> Dict[str, Any
         prompt = SUGGEST_CLARITY_FLOW_IMPROVEMENTS_PROMPT.format(blog_draft=state.refined_draft)
         response = await state.model.ainvoke(prompt)
 
-        if isinstance(response, str) and response.strip():
+        response_text = coerce_llm_output_to_text(response).strip()
+        if response_text:
             # Track output word count
-            output_words = len(response.strip().split())
+            output_words = len(response_text.split())
             word_change = output_words - input_words
             percent_change = (output_words / max(input_words, 1) * 100 - 100)
 
@@ -356,7 +399,7 @@ async def suggest_clarity_flow_node(state: BlogRefinementState) -> Dict[str, Any
             if output_words < input_words * 0.9:  # >10% reduction
                 logger.warning(f"Significant content reduction detected: {input_words} → {output_words} words ({percent_change:.1f}%)")
 
-            clarity_suggestions = response.strip()
+            clarity_suggestions = response_text
 
             # NEW: Save BLOG_REFINED milestone to SQL if sql_project_manager is available
             if hasattr(state, 'sql_project_manager') and state.sql_project_manager and hasattr(state, 'project_id') and state.project_id:
@@ -384,51 +427,152 @@ async def suggest_clarity_flow_node(state: BlogRefinementState) -> Dict[str, Any
                     logger.error(f"Failed to save refinement milestone: {e}")
                     # Don't fail the workflow for SQL errors
 
-            # Store the suggestions as a single string (bulleted list)
-            return {"clarity_flow_suggestions": clarity_suggestions}
+            # The LLM returns the IMPROVED draft, not just suggestions
+            # Update refined_draft with the improved version
+            logger.info("Clarity/flow improvements applied to refined_draft.")
+            return {
+                "refined_draft": clarity_suggestions,  # This IS the improved draft
+                "clarity_flow_suggestions": f"Applied improvements: {word_change:+d} words ({percent_change:+.1f}%)"
+            }
         else:
             logger.warning(f"Clarity/flow suggestion generation returned empty/invalid response: {response}")
-            # Decide if this is an error or just means no suggestions
-            # For now, let's assume empty means no suggestions needed, not an error.
-            return {"clarity_flow_suggestions": "No specific clarity or flow suggestions identified."}
+            # Keep the original refined_draft unchanged
+            return {"clarity_flow_suggestions": "No changes applied - empty response from model."}
     except Exception as e:
         logger.exception("Error in suggest_clarity_flow_node")
         return {"error": f"Clarity/flow suggestion generation failed: {str(e)}"}
 
 
-@track_node_costs("reduce_redundancy", agent_name="BlogRefinementAgent", stage="refinement")
-async def reduce_redundancy_node(state: BlogRefinementState) -> Dict[str, Any]:
-    """Node to reduce redundancy in the blog content."""
-    logger.info("Node: reduce_redundancy_node")
-    # Access Pydantic model fields directly
-    if state.error: return {"error": state.error}
+@track_node_costs("analyze_structure", agent_name="BlogRefinementAgent", stage="refinement")
+async def analyze_structure_node(state: BlogRefinementState) -> Dict[str, Any]:
+    """Node to analyze blog structure and create intelligent formatting plan."""
+    logger.info("Node: analyze_structure_node")
+    if state.error:
+        return {"error": state.error}
 
     try:
-        # Use the refined draft if available, otherwise use original draft
-        draft_to_refine = state.refined_draft if state.refined_draft else state.original_draft
-        
-        if not draft_to_refine:
-            logger.error("No draft found in state for redundancy reduction.")
-            return {"error": "No draft available for redundancy reduction."}
+        if not state.refined_draft:
+            logger.error("Refined draft not found in state for structure analysis.")
+            return {"error": "Refined draft is missing, cannot analyze structure."}
 
         if not state.model:
             raise ValueError("Refinement state is missing model reference")
 
-        prompt = REDUCE_REDUNDANCY_PROMPT.format(blog_draft=draft_to_refine)
-        response = await state.model.ainvoke(prompt)
+        # Sample the blog for analysis (first 3000 chars to avoid token limits)
+        blog_sample = state.refined_draft[:3000]
         
-        if isinstance(response, str) and response.strip():
-            logger.info("Redundancy reduction completed successfully.")
-            # Update the refined draft with the redundancy-reduced version
-            return {"refined_draft": response.strip()}
-        else:
-            logger.warning(f"Redundancy reduction returned empty/invalid response: {response}")
-            # If no reduction needed, keep the original
-            return {"refined_draft": draft_to_refine}
-    except Exception as e:
-        logger.exception("Error in reduce_redundancy_node")
-        return {"error": f"Redundancy reduction failed: {str(e)}"}
+        prompt = STRUCTURE_ANALYSIS_PROMPT.format(blog_draft=blog_sample)
+        response = await state.model.ainvoke(prompt)
 
+        response_text = coerce_llm_output_to_text(response).strip()
+        if response_text:
+            # Parse JSON response
+            cleaned_response = response_text
+            
+            # Remove markdown code fences if present
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.startswith("```"):
+                cleaned_response = cleaned_response[3:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+
+            try:
+                structure_analysis = json.loads(cleaned_response)
+                
+                # Validate essential fields
+                if not isinstance(structure_analysis, dict):
+                    raise ValueError("Structure analysis must be a dictionary")
+                
+                required_keys = ["blog_summary", "structure", "formatting_plan", "chunking_plan"]
+                missing_keys = [k for k in required_keys if k not in structure_analysis]
+                if missing_keys:
+                    logger.warning(f"Structure analysis missing keys: {missing_keys}, using defaults")
+                
+                logger.info("Structure analysis completed successfully.")
+                return {"structure_analysis": structure_analysis}
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse structure analysis JSON: {e}")
+                # Return a minimal default analysis
+                default_analysis = {
+                    "blog_summary": "Blog structure analysis",
+                    "structure": {"introduction": {}, "main_sections": [], "conclusion": {}},
+                    "formatting_plan": {"callouts": [], "dividers": [], "pull_quotes": [], "image_placeholders": []},
+                    "chunking_plan": {"chunks": [], "total_chunks": 0, "chunking_rationale": "Default"}
+                }
+                return {"structure_analysis": default_analysis}
+        else:
+            logger.warning(f"Structure analysis returned empty/invalid response")
+            return {"error": "Failed to analyze blog structure"}
+
+    except Exception as e:
+        logger.exception("Error in analyze_structure_node")
+        return {"error": f"Structure analysis failed: {str(e)}"}
+
+
+@track_node_costs("format_chunks_parallel", agent_name="BlogRefinementAgent", stage="refinement")
+async def format_chunks_parallel_node(state: BlogRefinementState) -> Dict[str, Any]:
+    """Node to format the refined blog draft in a single pass (no judge/retry loop)."""
+    logger.info("Node: format_chunks_parallel_node")
+    if state.error:
+        return {"error": state.error}
+
+    try:
+        if not state.refined_draft:
+            logger.error("Refined draft not found in state for chunk formatting.")
+            return {"error": "Refined draft is missing, cannot apply formatting."}
+
+        if not state.model:
+            raise ValueError("Refinement state is missing model reference")
+
+        # Note: We intentionally skip LLM judging and retries for speed/cost.
+        # This node does a single whole-draft formatting call and returns immediately.
+
+        # Get persona instructions if available
+        persona_instructions = ""
+        if state.persona_service:
+            try:
+                if hasattr(state.persona_service, 'get_persona_instructions'):
+                    persona_instructions = state.persona_service.get_persona_instructions()
+                elif hasattr(state.persona_service, 'personas'):
+                    if hasattr(state.persona_service, 'get_active_persona'):
+                        active_persona = state.persona_service.get_active_persona()
+                        if active_persona and 'instructions' in active_persona:
+                            persona_instructions = active_persona['instructions']
+            except Exception as e:
+                logger.warning(f"Could not retrieve persona instructions: {e}")
+                persona_instructions = ""
+
+        prompt = get_formatting_prompt(
+            blog_draft=state.refined_draft,
+            persona_instructions=persona_instructions,
+            # Use the strict formatting prompt on the single pass to ensure the required elements are added.
+            formatting_attempts=1,
+        )
+
+        response = await state.model.ainvoke(prompt)
+        formatted = coerce_llm_output_to_text(response).strip()
+        if not formatted:
+            logger.warning("Formatting returned empty response; falling back to unformatted refined draft")
+            formatted = state.refined_draft
+
+        return {
+            "formatted_draft": formatted,
+            "formatting_chunks": [],
+            "formatting_skipped": False,
+            "formatting_skip_reason": None,
+        }
+
+    except Exception as e:
+        logger.exception("Error in format_chunks_parallel_node")
+        # On error, fallback to original refined draft
+        return {
+            "formatted_draft": state.refined_draft,
+            "formatting_chunks": [],
+            "formatting_skipped": True,
+            "formatting_skip_reason": f"Parallel chunk formatting failed: {str(e)}"
+        }
 
 def assemble_refined_draft_node(state: BlogRefinementState) -> Dict[str, Any]:
     """Node to assemble the final refined draft."""
