@@ -259,6 +259,46 @@ def validate_image_placeholders(content: str) -> Tuple[bool, str]:
     return True, f"Found {placeholder_count} image placeholder(s) with descriptions"
 
 
+def validate_latex_preserved(original: str, formatted: str) -> Tuple[bool, str]:
+    """Check LaTeX blocks weren't mangled during formatting.
+
+    Validates equation markers are present but doesn't check content.
+    Per RESEARCH.md: validate presence only, not syntax.
+
+    Args:
+        original: Content before formatting
+        formatted: Content after formatting
+
+    Returns:
+        (is_valid, feedback_message)
+    """
+    # Count inline LaTeX: single dollar signs (exclude double)
+    inline_pattern = r'(?<!\$)\$(?!\$)[^\$]+\$(?!\$)'
+    orig_inline = len(re.findall(inline_pattern, original))
+    fmt_inline = len(re.findall(inline_pattern, formatted))
+
+    # Count display LaTeX: double dollar signs
+    display_pattern = r'\$\$[^\$]+\$\$'
+    orig_display = len(re.findall(display_pattern, original))
+    fmt_display = len(re.findall(display_pattern, formatted))
+
+    # Calculate totals
+    total_orig = orig_inline + orig_display
+    total_fmt = fmt_inline + fmt_display
+
+    # If no equations in original, nothing to preserve
+    if total_orig == 0:
+        return True, "No LaTeX equations in original content"
+
+    # Check formatted retains >= 90% of original equation count
+    retention_ratio = total_fmt / total_orig if total_orig > 0 else 1.0
+
+    if retention_ratio < 0.90:
+        return False, f"LaTeX equations reduced from {total_orig} to {total_fmt} ({retention_ratio:.0%} retention, need ≥90%)"
+
+    return True, f"LaTeX preserved: {fmt_inline} inline, {fmt_display} display (total: {total_fmt})"
+
+
 def validate_content_preserved(original: str, formatted: str) -> Tuple[bool, str]:
     """Check that formatting preserved all original content.
 
