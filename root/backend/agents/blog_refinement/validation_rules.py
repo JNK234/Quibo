@@ -74,16 +74,28 @@ def validate_tldr_section(content: str) -> Tuple[bool, str]:
         return False, f"TL;DR section found at position {match.start()}, should be within first 500 chars"
 
     # Find the TL;DR block and count bullets
-    # Look for consecutive blockquote bullet lines after the TL;DR header
+    # Look for consecutive blockquote lines after the TL;DR header
     start_pos = match.start()
-    # Extract text from TL;DR start to next non-blockquote line
+    # Extract consecutive blockquote lines (lines starting with >)
     remaining = content[start_pos:]
-    tldr_block_match = re.search(r'^>.*?(?=\n[^>]|\n$|$)', remaining, re.MULTILINE | re.DOTALL)
 
-    if not tldr_block_match:
+    # Match all consecutive lines starting with > (the blockquote block)
+    lines = remaining.split('\n')
+    tldr_lines = []
+    for line in lines:
+        if line.strip().startswith('>'):
+            tldr_lines.append(line)
+        elif line.strip() == '':
+            # Allow blank lines within the blockquote
+            continue
+        else:
+            # Stop at first non-blockquote, non-blank line
+            break
+
+    if not tldr_lines:
         return False, "TL;DR header found but no blockquote content follows"
 
-    tldr_block = tldr_block_match.group(0)
+    tldr_block = '\n'.join(tldr_lines)
 
     # Count bullets within the TL;DR block
     bullets = re.findall(r'^>\s*-\s*.+', tldr_block, re.MULTILINE)
