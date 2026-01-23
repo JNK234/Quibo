@@ -153,6 +153,7 @@ async def load_workflow_state(project_id: str) -> Optional[Dict[str, Any]]:
         m = milestones["blog_refined"]
         try:
             state["refined_draft"] = m["data"].get("refined_content")
+            state["formatted_draft"] = m["data"].get("formatted_content")  # Load formatted content
             state["summary"] = m["data"].get("summary")
             state["title_options"] = m["data"].get("title_options")
         except (KeyError, AttributeError) as e:
@@ -1103,6 +1104,7 @@ async def refine_blog(
     project_name: str,
     job_id: str = Form(...),
     compiled_draft: str = Form(...),
+    persona: Optional[str] = Form(None),
     title_config: Optional[str] = Form(None),  # JSON string for title configuration
     social_config: Optional[str] = Form(
         None
@@ -1189,6 +1191,7 @@ async def refine_blog(
         logger.info(f"Refining blog draft for job_id: {job_id}")
         refinement_result = await refinement_agent.refine_blog_with_graph(
             blog_draft=compiled_draft,
+            persona_name=persona,
             cost_aggregator=cost_aggregator,
             project_id=job_id,  # Use job_id as project_id
             title_config=title_generation_config,
@@ -1219,6 +1222,8 @@ async def refine_blog(
                 "refined_at": datetime.now().isoformat(),
                 "word_count": len(refinement_result.refined_draft.split()),
                 "cost_summary": cost_summary,
+                "formatted_content": refinement_result.formatted_draft,
+                "formatting_skipped": refinement_result.formatting_skipped,
             }
             milestone_metadata = {
                 "cost_summary": cost_summary,
@@ -1245,6 +1250,8 @@ async def refine_blog(
                 "summary": refinement_result.summary,
                 "title_options": title_options_list,
                 "cost_summary": cost_summary,
+                "formatted_draft": refinement_result.formatted_draft,
+                "formatting_skipped": refinement_result.formatting_skipped,
             }
         )
 
@@ -1266,6 +1273,7 @@ async def refine_standalone(
     compiled_draft: str = Form(...),
     model_name: str = Form("gemini"),
     specific_model: Optional[str] = Form(None),
+    persona: Optional[str] = Form(None),
 ) -> JSONResponse:
     """Refine a blog draft without requiring job state - for resuming after expiry."""
     try:
@@ -1278,7 +1286,8 @@ async def refine_standalone(
         # Run refinement directly without job state
         logger.info(f"Refining blog draft for project: {project_name}")
         refinement_result = await refinement_agent.refine_blog_with_graph(
-            blog_draft=compiled_draft
+            blog_draft=compiled_draft,
+            persona_name=persona,
         )
 
         if not refinement_result:
@@ -1292,6 +1301,8 @@ async def refine_standalone(
             content={
                 "project_name": project_name,
                 "refined_draft": refinement_result.refined_draft,
+                "formatted_draft": refinement_result.formatted_draft,
+                "formatting_skipped": refinement_result.formatting_skipped,
                 "summary": refinement_result.summary,
                 "title_options": [
                     option.model_dump() for option in refinement_result.title_options
@@ -1735,6 +1746,17 @@ async def resume_project(project_id: str) -> JSONResponse:
                 "model_name": state.get("model_name"),
                 "specific_model": state.get("specific_model"),
                 "persona": state.get("persona"),
+                # Content
+                "final_draft": state.get("final_draft"),
+                "refined_draft": state.get("refined_draft"),
+                "formatted_draft": state.get("formatted_draft"),
+                "summary": state.get("summary"),
+                "title_options": state.get("title_options"),
+                "social_content": state.get("social_content"),
+                # Outline data
+                "outline": state.get("outline"),
+                "outline_hash": state.get("outline_hash"),
+                "generated_sections": state.get("generated_sections", {}),
                 # Progress tracking
                 "current_milestone": current_milestone,
                 "next_step": next_step,
@@ -1748,6 +1770,7 @@ async def resume_project(project_id: str) -> JSONResponse:
                 if files_milestone
                 else {},
                 "processed_file_hashes": files_milestone.get("data", {}),
+                "cost_summary": state.get("cost_summary"),
             }
         )
 
