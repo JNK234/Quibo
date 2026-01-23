@@ -296,3 +296,72 @@ def validate_content_preserved(original: str, formatted: str) -> Tuple[bool, str
         return False, f"Significant content changes detected: {similarity:.0%} similarity (need ≥90%)"
 
     return True, f"Content preserved: {word_retention:.0%} retention, {similarity:.0%} similarity"
+
+
+@dataclass
+class ValidationReport:
+    """Structured validation result."""
+    is_valid: bool
+    score: float
+    passed: List[str]
+    failed: List[str]
+    feedback: Dict[str, str]
+
+
+def validate_formatting_standards(content: str, original_content: str = None) -> ValidationReport:
+    """Run all validation checks and return comprehensive report.
+
+    Args:
+        content: Formatted markdown blog content
+        original_content: Original content for preservation check (optional)
+
+    Returns:
+        ValidationReport with aggregated results
+    """
+    # Define validators (order matters for consistency in reports)
+    validators = {
+        'tldr_section': validate_tldr_section,
+        'heading_hierarchy': validate_heading_hierarchy,
+        'callouts': validate_callouts,
+        'code_context': validate_code_context,
+        'image_placeholders': validate_image_placeholders,
+    }
+
+    passed = []
+    failed = []
+    feedback = {}
+
+    # Run each validator on content
+    for name, validator in validators.items():
+        is_valid, message = validator(content)
+        feedback[name] = message
+
+        if is_valid:
+            passed.append(name)
+        else:
+            failed.append(name)
+
+    # Optionally run content preservation check if original provided
+    if original_content:
+        is_valid, message = validate_content_preserved(original_content, content)
+        feedback['content_preservation'] = message
+
+        if is_valid:
+            passed.append('content_preservation')
+        else:
+            failed.append('content_preservation')
+
+    # Calculate score (0.0 to 1.0)
+    total_checks = len(validators) + (1 if original_content else 0)
+    score = len(passed) / total_checks if total_checks > 0 else 0.0
+
+    # Apply 85% threshold for is_valid
+    is_valid = score >= 0.85
+
+    return ValidationReport(
+        is_valid=is_valid,
+        score=score,
+        passed=passed,
+        failed=failed,
+        feedback=feedback
+    )
