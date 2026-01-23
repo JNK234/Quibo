@@ -21,14 +21,14 @@ $blog_draft
 </blog_draft>
 
 <formatting_rules>
-1. **TL;DR**: Add at top with 3-5 bullet points summarizing key takeaways
+1. **TL;DR**: Add at the VERY TOP as blockquote: > **TL;DR** followed by > - bullet points (3-5)
 2. **BULLETS**: Convert prose lists (3+ items) to bullet points
 3. **CALLOUTS**: Add 2-4 callouts using > 💡/⚠️/🎯 **Label:** format where they add value
 4. **IMAGES**: Add 2-4 [IMAGE: description] placeholders where visuals help
 5. **HEADINGS**: Use H2 for sections, H3 for subsections (no H4+)
 6. **DIVIDERS**: Add --- between major H2 sections
 7. **CODE**: Ensure each code block has lead-in explanation
-8. **EQUATIONS**: Keep simple math inline ($x$), use display ($$) for complex formulas
+8. **EQUATIONS**: Group related equations together in multi-line display blocks using $$ (Substack compatible). Avoid scattering inline equations.
 </formatting_rules>
 
 <constraints>
@@ -66,14 +66,14 @@ $blog_draft
 </blog_draft>
 
 <formatting_rules>
-1. **TL;DR** (REQUIRED): Add at top with 3-5 bullet points
+1. **TL;DR** (REQUIRED): Add at the VERY TOP as blockquote: > **TL;DR** followed by > - bullet points (3-5)
 2. **BULLETS**: Convert prose lists (3+ items) to bullet points
 3. **CALLOUTS**: Add 2-4 callouts using > 💡/⚠️/🎯 **Label:** format
 4. **IMAGES**: Add 2-4 [IMAGE: description] placeholders
-5. **HEADINGS**: Use H2 for sections, H3 for subsections
+5. **HEADINGS**: Use H2 for sections, H3 for subsections (no H4+)
 6. **DIVIDERS**: Add --- between major H2 sections
 7. **CODE**: Ensure each code block has lead-in explanation
-8. **EQUATIONS**: Keep simple math inline ($x$), use display ($$) for complex
+8. **EQUATIONS**: Group related equations together in multi-line display blocks using $$ (Substack compatible). Avoid scattering inline equations.
 </formatting_rules>
 
 <constraints>
