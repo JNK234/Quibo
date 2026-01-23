@@ -148,6 +148,12 @@ async def generate_titles_node(state: BlogRefinementState) -> Dict[str, Any]:
     # Access Pydantic model fields directly
     if state.error: return {"error": state.error}
 
+    # Get persona instructions
+    persona_service = PersonaService()
+    persona_name = getattr(state, 'persona_name', 'neuraforge')
+    persona_instructions = persona_service.get_persona_prompt(persona_name)
+    logger.info(f"Using persona: {persona_name} for title generation")
+
     try:
         if not state.model:
             raise ValueError("Refinement state is missing model reference")
@@ -156,10 +162,12 @@ async def generate_titles_node(state: BlogRefinementState) -> Dict[str, Any]:
         config = state.title_config or TitleGenerationConfig()
 
         # Build dynamic prompt based on configuration
-        prompt = build_title_generation_prompt(
+        base_prompt = build_title_generation_prompt(
             blog_draft=state.original_draft,
             config=config
         )
+        # Prepend persona instructions to guide title voice and style
+        prompt = f"{persona_instructions}\n\n{base_prompt}"
 
         logger.info(f"Generated prompt length: {len(prompt)}")
         logger.info(f"Title generation config: {config.num_titles} titles, "
@@ -529,17 +537,13 @@ async def format_chunks_parallel_node(state: BlogRefinementState) -> Dict[str, A
         # Note: We intentionally skip LLM judging and retries for speed/cost.
         # This node does a single whole-draft formatting call and returns immediately.
 
-        # Get persona instructions if available
+        # Get persona instructions using correct PersonaService method
         persona_instructions = ""
+        persona_name = getattr(state, 'persona_name', 'neuraforge')
         if state.persona_service:
             try:
-                if hasattr(state.persona_service, 'get_persona_instructions'):
-                    persona_instructions = state.persona_service.get_persona_instructions()
-                elif hasattr(state.persona_service, 'personas'):
-                    if hasattr(state.persona_service, 'get_active_persona'):
-                        active_persona = state.persona_service.get_active_persona()
-                        if active_persona and 'instructions' in active_persona:
-                            persona_instructions = active_persona['instructions']
+                persona_instructions = state.persona_service.get_persona_prompt(persona_name)
+                logger.info(f"Using persona: {persona_name} for formatting")
             except Exception as e:
                 logger.warning(f"Could not retrieve persona instructions: {e}")
                 persona_instructions = ""
