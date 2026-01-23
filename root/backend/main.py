@@ -152,8 +152,9 @@ async def load_workflow_state(project_id: str) -> Optional[Dict[str, Any]]:
     if "blog_refined" in milestones:
         m = milestones["blog_refined"]
         try:
-            state["refined_draft"] = m["data"].get("refined_content")
-            state["formatted_draft"] = m["data"].get("formatted_content")  # Load formatted content
+            # Use formatted_draft as primary, fall back to refined_draft for backward compatibility
+            state["formatted_draft"] = m["data"].get("formatted_draft") or m["data"].get("refined_content") or m["data"].get("refined_draft")
+            state["refined_draft"] = state["formatted_draft"]  # Keep both in sync for now
             state["summary"] = m["data"].get("summary")
             state["title_options"] = m["data"].get("title_options")
         except (KeyError, AttributeError) as e:

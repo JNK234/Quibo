@@ -413,7 +413,7 @@ async def suggest_clarity_flow_node(state: BlogRefinementState) -> Dict[str, Any
             if hasattr(state, 'sql_project_manager') and state.sql_project_manager and hasattr(state, 'project_id') and state.project_id:
                 try:
                     milestone_data = {
-                        "refined_draft": state.refined_draft or "",
+                        "formatted_draft": state.formatted_draft or state.refined_draft or "",
                         "summary": state.summary or "",
                         "title_options": [
                             {
