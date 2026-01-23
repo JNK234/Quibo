@@ -521,7 +521,7 @@ async def analyze_structure_node(state: BlogRefinementState) -> Dict[str, Any]:
 
 @track_node_costs("format_chunks_parallel", agent_name="BlogRefinementAgent", stage="refinement")
 async def format_chunks_parallel_node(state: BlogRefinementState) -> Dict[str, Any]:
-    """Node to format the refined blog draft in a single pass (no judge/retry loop)."""
+    """Node to format the refined blog draft with retry feedback support."""
     logger.info("Node: format_chunks_parallel_node")
     if state.error:
         return {"error": state.error}
@@ -534,8 +534,8 @@ async def format_chunks_parallel_node(state: BlogRefinementState) -> Dict[str, A
         if not state.model:
             raise ValueError("Refinement state is missing model reference")
 
-        # Note: We intentionally skip LLM judging and retries for speed/cost.
-        # This node does a single whole-draft formatting call and returns immediately.
+        # Check if this is a retry attempt
+        is_retry = state.formatting_attempts > 0
 
         # Get persona instructions using correct PersonaService method
         persona_instructions = ""
@@ -548,12 +548,29 @@ async def format_chunks_parallel_node(state: BlogRefinementState) -> Dict[str, A
                 logger.warning(f"Could not retrieve persona instructions: {e}")
                 persona_instructions = ""
 
-        prompt = get_formatting_prompt(
-            blog_draft=state.refined_draft,
-            persona_instructions=persona_instructions,
-            # Use the strict formatting prompt on the single pass to ensure the required elements are added.
-            formatting_attempts=1,
-        )
+        # Build prompt with feedback for retries
+        if is_retry and state.formatting_feedback_history:
+            # Retry attempt - use strict prompt with feedback injection
+            logger.info(
+                f"Formatting retry attempt {state.formatting_attempts + 1}, "
+                f"previous score: {state.formatting_validation_score:.0%}, "
+                f"missing: {state.formatting_missing_elements}"
+            )
+            prompt = get_formatting_prompt(
+                blog_draft=state.refined_draft,
+                persona_instructions=persona_instructions,
+                formatting_attempts=state.formatting_attempts,
+                formatting_missing_elements=state.formatting_missing_elements,
+                formatting_feedback_history=state.formatting_feedback_history,
+                max_formatting_retries=state.max_formatting_retries
+            )
+        else:
+            # First attempt - use base prompt
+            prompt = get_formatting_prompt(
+                blog_draft=state.refined_draft,
+                persona_instructions=persona_instructions,
+                formatting_attempts=0,
+            )
 
         response = await state.model.ainvoke(prompt)
         formatted = coerce_llm_output_to_text(response).strip()
