@@ -519,10 +519,14 @@ async def analyze_structure_node(state: BlogRefinementState) -> Dict[str, Any]:
         return {"error": f"Structure analysis failed: {str(e)}"}
 
 
-@track_node_costs("format_chunks_parallel", agent_name="BlogRefinementAgent", stage="refinement")
-async def format_chunks_parallel_node(state: BlogRefinementState) -> Dict[str, Any]:
-    """Node to format the refined blog draft with retry feedback support."""
-    logger.info("Node: format_chunks_parallel_node")
+@track_node_costs("format_draft", agent_name="BlogRefinementAgent", stage="refinement")
+async def format_draft_node(state: BlogRefinementState) -> Dict[str, Any]:
+    """Node to format the refined blog draft with retry feedback support.
+
+    Single-pass formatting that applies visual structure (TL;DR, callouts, bullets, etc.).
+    Supports retry with feedback from validation failures.
+    """
+    logger.info("Node: format_draft_node")
     if state.error:
         return {"error": state.error}
 
@@ -586,13 +590,13 @@ async def format_chunks_parallel_node(state: BlogRefinementState) -> Dict[str, A
         }
 
     except Exception as e:
-        logger.exception("Error in format_chunks_parallel_node")
+        logger.exception("Error in format_draft_node")
         # On error, fallback to original refined draft
         return {
             "formatted_draft": state.refined_draft,
             "formatting_chunks": [],
             "formatting_skipped": True,
-            "formatting_skip_reason": f"Parallel chunk formatting failed: {str(e)}"
+            "formatting_skip_reason": f"Draft formatting failed: {str(e)}"
         }
 
 def assemble_refined_draft_node(state: BlogRefinementState) -> Dict[str, Any]:

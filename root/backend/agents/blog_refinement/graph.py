@@ -12,7 +12,7 @@ from backend.agents.blog_refinement.nodes import (
     generate_conclusion_node,
     generate_summary_node,
     generate_titles_node,
-    format_chunks_parallel_node,
+    format_draft_node,
     assemble_refined_draft_node
 )
 from backend.agents.blog_refinement.formatting_validator import validate_formatting_node
@@ -60,7 +60,7 @@ async def create_refinement_graph() -> StateGraph:
     graph.add_node("generate_conclusion", generate_conclusion_node)
     graph.add_node("generate_summary", generate_summary_node)
     graph.add_node("generate_titles", generate_titles_node)
-    graph.add_node("format_chunks_parallel", format_chunks_parallel_node)
+    graph.add_node("format_draft", format_draft_node)
     graph.add_node("assemble_draft", assemble_refined_draft_node)
     graph.add_node("validate_formatting", validate_formatting_node)
 
@@ -79,15 +79,15 @@ async def create_refinement_graph() -> StateGraph:
     graph.add_edge("generate_conclusion", "generate_summary")
     graph.add_edge("generate_summary", "generate_titles")
     graph.add_edge("generate_titles", "assemble_draft")
-    graph.add_edge("assemble_draft", "format_chunks_parallel")
+    graph.add_edge("assemble_draft", "format_draft")
     # Add validation after formatting
-    graph.add_edge("format_chunks_parallel", "validate_formatting")
+    graph.add_edge("format_draft", "validate_formatting")
     # Conditional retry loop: retry formatting or complete
     graph.add_conditional_edges(
         "validate_formatting",
         should_retry_formatting,
         {
-            "retry": "format_chunks_parallel",
+            "retry": "format_draft",
             "complete": END
         }
     )
