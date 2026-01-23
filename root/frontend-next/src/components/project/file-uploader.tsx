@@ -1,5 +1,5 @@
-// ABOUTME: Drag-and-drop file uploader for uploading .ipynb, .md, and .py files
-// ABOUTME: Displays selected files with type icons and supports removal
+// ABOUTME: Drag-and-drop file uploader for uploading .ipynb, .md, .py, and .txt files
+// ABOUTME: Displays selected files with type icons, validates size (10MB), and shows toast errors
 
 "use client"
 
@@ -8,8 +8,10 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Upload, File, FileCode, X, FileText } from "lucide-react"
+import { toast } from "sonner"
 
-const ACCEPTED_EXTENSIONS = [".ipynb", ".md", ".py"]
+const ACCEPTED_EXTENSIONS = [".ipynb", ".md", ".py", ".txt"]
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 const ACCEPTED_MIME_TYPES = [
   "application/x-ipynb+json",
   "application/json",
@@ -33,14 +35,30 @@ function getFileIcon(filename: string) {
       return <FileText className="h-4 w-4 text-blue-500" />
     case ".py":
       return <FileCode className="h-4 w-4 text-green-500" />
+    case ".txt":
+      return <FileText className="h-4 w-4 text-gray-500" />
     default:
       return <File className="h-4 w-4 text-muted-foreground" />
   }
 }
 
-function isValidFile(file: File): boolean {
+interface ValidationResult {
+  valid: boolean
+  reason?: string
+}
+
+function validateFile(file: File): ValidationResult {
   const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."))
-  return ACCEPTED_EXTENSIONS.includes(ext)
+
+  if (!ACCEPTED_EXTENSIONS.includes(ext)) {
+    return { valid: false, reason: "Invalid file type. Accepted: .ipynb, .md, .py, .txt" }
+  }
+
+  if (file.size > MAX_FILE_SIZE) {
+    return { valid: false, reason: "File too large. Maximum size: 10MB" }
+  }
+
+  return { valid: true }
 }
 
 export function FileUploader({
@@ -56,7 +74,17 @@ export function FileUploader({
     (files: FileList | null) => {
       if (!files || disabled) return
 
-      const validFiles = Array.from(files).filter(isValidFile)
+      const validFiles: File[] = []
+
+      Array.from(files).forEach((file) => {
+        const result = validateFile(file)
+        if (result.valid) {
+          validFiles.push(file)
+        } else if (result.reason) {
+          toast.error(result.reason)
+        }
+      })
+
       if (validFiles.length === 0) return
 
       const newFiles = [...selectedFiles, ...validFiles]
@@ -166,7 +194,10 @@ export function FileUploader({
               or click to browse
             </p>
             <p className="text-xs text-muted-foreground">
-              Accepted formats: .ipynb, .md, .py
+              Accepted formats: .ipynb, .md, .py, .txt
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Max 10MB per file
             </p>
           </div>
         </CardContent>
