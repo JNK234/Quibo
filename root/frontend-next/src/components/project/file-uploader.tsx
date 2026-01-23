@@ -7,8 +7,9 @@ import { useState, useCallback, useRef } from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Upload, File, FileCode, X, FileText } from "lucide-react"
+import { Upload, File, FileCode, FileText, Loader2 } from "lucide-react"
 import { toast } from "sonner"
+import { FilePreview } from "./file-preview"
 
 const ACCEPTED_EXTENSIONS = [".ipynb", ".md", ".py", ".txt"]
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
@@ -24,6 +25,8 @@ interface FileUploaderProps {
   onFilesSelected: (files: File[]) => void
   disabled?: boolean
   existingFiles?: string[]
+  uploadProgress?: number // 0-100, from useFileUpload hook
+  isUploading?: boolean // true during upload
 }
 
 function getFileIcon(filename: string) {
@@ -65,6 +68,8 @@ export function FileUploader({
   onFilesSelected,
   disabled = false,
   existingFiles = [],
+  uploadProgress,
+  isUploading = false,
 }: FileUploaderProps) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
@@ -72,7 +77,7 @@ export function FileUploader({
 
   const handleFiles = useCallback(
     (files: FileList | null) => {
-      if (!files || disabled) return
+      if (!files || disabled || isUploading) return
 
       const validFiles: File[] = []
 
@@ -91,7 +96,7 @@ export function FileUploader({
       setSelectedFiles(newFiles)
       onFilesSelected(newFiles)
     },
-    [selectedFiles, onFilesSelected, disabled]
+    [selectedFiles, onFilesSelected, disabled, isUploading]
   )
 
   const handleDragOver = useCallback(
@@ -177,28 +182,46 @@ export function FileUploader({
             }}
             aria-label="Upload files"
           >
-            <div
-              className={cn(
-                "rounded-full p-3 mb-4 transition-colors",
-                isDragOver && !disabled
-                  ? "bg-primary/10 text-primary"
-                  : "bg-muted text-muted-foreground"
-              )}
-            >
-              <Upload className="h-6 w-6" />
-            </div>
-            <p className="text-sm font-medium text-foreground mb-1">
-              {isDragOver ? "Drop files here" : "Drag and drop files here"}
-            </p>
-            <p className="text-xs text-muted-foreground mb-3">
-              or click to browse
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Accepted formats: .ipynb, .md, .py, .txt
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Max 10MB per file
-            </p>
+            {isUploading && uploadProgress !== undefined ? (
+              <>
+                <div className="rounded-full p-3 mb-4 bg-primary/10 text-primary">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+                <p className="text-sm font-medium text-foreground mb-1">
+                  {uploadProgress < 100
+                    ? `Uploading... ${uploadProgress}%`
+                    : "Completing..."}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Please wait while your files are being uploaded
+                </p>
+              </>
+            ) : (
+              <>
+                <div
+                  className={cn(
+                    "rounded-full p-3 mb-4 transition-colors",
+                    isDragOver && !disabled
+                      ? "bg-primary/10 text-primary"
+                      : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  <Upload className="h-6 w-6" />
+                </div>
+                <p className="text-sm font-medium text-foreground mb-1">
+                  {isDragOver ? "Drop files here" : "Drag and drop files here"}
+                </p>
+                <p className="text-xs text-muted-foreground mb-3">
+                  or click to browse
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Accepted formats: .ipynb, .md, .py, .txt
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Max 10MB per file
+                </p>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -233,27 +256,12 @@ export function FileUploader({
               </li>
             ))}
             {selectedFiles.map((file, index) => (
-              <li
+              <FilePreview
                 key={`new-${index}`}
-                className="flex items-center justify-between rounded-md border bg-card px-3 py-2"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  {getFileIcon(file.name)}
-                  <span className="text-sm truncate">{file.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    ({(file.size / 1024).toFixed(1)} KB)
-                  </span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => handleRemoveFile(index)}
-                  disabled={disabled}
-                  aria-label={`Remove ${file.name}`}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </li>
+                file={file}
+                onRemove={() => handleRemoveFile(index)}
+                disabled={disabled || isUploading}
+              />
             ))}
           </ul>
         </div>
