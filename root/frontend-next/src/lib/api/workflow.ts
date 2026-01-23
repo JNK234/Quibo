@@ -127,6 +127,91 @@ export async function uploadFiles(
 }
 
 /**
+ * Upload files with progress tracking using XMLHttpRequest
+ * POST /upload/{project_name} with multipart form data
+ * Uses XHR instead of fetch to access upload.onprogress events
+ */
+export function uploadFilesWithProgress(
+  projectName: string,
+  files: File[],
+  onProgress: (percent: number) => void,
+  options?: { modelName?: string; persona?: string; signal?: AbortSignal }
+): Promise<UploadFilesResponse> {
+  const config = getApiConfig()
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    const formData = new FormData()
+
+    // Append all files
+    for (const file of files) {
+      formData.append("files", file)
+    }
+
+    // Append optional parameters
+    if (options?.modelName) {
+      formData.append("model_name", options.modelName)
+    }
+    if (options?.persona) {
+      formData.append("persona", options.persona)
+    }
+
+    // Track upload progress
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100)
+        onProgress(percent)
+      }
+    }
+
+    // Handle successful response
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText)
+          resolve(transformKeys(data) as UploadFilesResponse)
+        } catch {
+          reject(new ApiClientError(xhr.status, "Failed to parse response", xhr.responseText))
+        }
+      } else {
+        let details: unknown
+        try {
+          details = JSON.parse(xhr.responseText)
+        } catch {
+          details = xhr.responseText
+        }
+        reject(new ApiClientError(xhr.status, `API error: ${xhr.statusText}`, details))
+      }
+    }
+
+    // Handle network errors
+    xhr.onerror = () => {
+      reject(new ApiClientError(0, "Network error during upload", null))
+    }
+
+    // Handle aborted uploads
+    xhr.onabort = () => {
+      reject(new ApiClientError(0, "Upload cancelled", null))
+    }
+
+    // Support AbortSignal for cancellation
+    if (options?.signal) {
+      options.signal.addEventListener("abort", () => {
+        xhr.abort()
+      })
+    }
+
+    // Open connection and set headers
+    xhr.open("POST", `${config.API_BASE_URL}/upload/${encodeURIComponent(projectName)}`)
+    xhr.setRequestHeader("X-API-Key", config.API_KEY)
+    // DO NOT set Content-Type - browser sets multipart boundary automatically
+
+    // Send the request
+    xhr.send(formData)
+  })
+}
+
+/**
  * Process uploaded files for a project
  * POST /process_files/{project_name} with form data
  */
