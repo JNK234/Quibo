@@ -82,6 +82,7 @@ class SessionManager:
                 'generated_sections': {}, # Dict mapping index to section data {title, raw_content, formatted_content}
                 'final_draft': None, # Compiled draft before refinement
                 'refined_draft': None, # Draft after adding intro/conclusion
+                'formatted_draft': None, # Formatted version of refined draft with proper styling
                 'summary': None, # Generated summary
                 'title_options': None, # List of generated TitleOption objects
                 'social_content': None, # Dict for {breakdown, linkedin, x, newsletter}
@@ -136,7 +137,7 @@ class SessionManager:
         keys_to_reset = [
             'project_name', 'selected_model', 'selected_persona', 'specific_model', 'uploaded_files_info', 'processed_file_paths',
             'processed_file_hashes', 'notebook_hash', 'markdown_hash', 'python_hashes',
-            'generated_outline', 'generated_sections', 'final_draft', 'refined_draft',
+            'generated_outline', 'generated_sections', 'final_draft', 'refined_draft', 'formatted_draft',
             'summary', 'title_options', 'social_content', 'current_section_index', 'total_sections',
             'is_initialized', 'error_message'
         ]
@@ -436,10 +437,12 @@ def create_complete_blog_package() -> Dict[str, str]:
     if final_draft:
         package[f"{safe_project_name}_original_draft.md"] = final_draft
     
-    # 2. Refined Blog Draft
+    # 2. Refined Blog Draft (prefer formatted version)
+    formatted_draft = SessionManager.get('formatted_draft')
     refined_draft = SessionManager.get('refined_draft')
-    if refined_draft:
-        package[f"{safe_project_name}_refined_blog.md"] = refined_draft
+    blog_to_package = formatted_draft or refined_draft
+    if blog_to_package:
+        package[f"{safe_project_name}_refined_blog.md"] = blog_to_package
     
     # 3. Blog Summary
     summary = SessionManager.get('summary')
@@ -701,6 +704,7 @@ class ProjectHubUI:
                 SessionManager.set('current_section_index', len(generated_sections))
                 SessionManager.set('final_draft', state.get('final_draft'))
                 SessionManager.set('refined_draft', state.get('refined_draft'))
+                SessionManager.set('formatted_draft', state.get('formatted_draft'))  # Restore formatted content
                 SessionManager.set('summary', state.get('summary'))
                 SessionManager.set('title_options', state.get('title_options'))
                 SessionManager.set('social_content', state.get('social_content'))
@@ -1978,7 +1982,10 @@ class RefinementUI:
                                 base_url=SessionManager.get('api_base_url')
                             ))
                     # Store the results from the API response
-                    SessionManager.set('refined_draft', result.get('refined_draft')) # This should be the final text
+                    # Use formatted_draft as primary, fall back to refined_draft
+                    content_to_store = result.get('formatted_draft') or result.get('refined_draft')
+                    SessionManager.set('refined_draft', content_to_store)
+                    SessionManager.set('formatted_draft', content_to_store)
                     SessionManager.set('summary', result.get('summary'))
                     SessionManager.set('title_options', result.get('title_options')) # Expecting a list of dicts
                     SessionManager.set('cost_summary', result.get('cost_summary'))
@@ -1988,13 +1995,14 @@ class RefinementUI:
                     # Auto-save the refined blog content
                     try:
                         auto_save_manager = SessionManager.get_auto_save_manager()
-                        refined_content = result.get('refined_draft')
+                        # Use formatted_draft as primary, fall back to refined_draft
+                        content_to_save = result.get('formatted_draft') or result.get('refined_draft')
                         summary_content = result.get('summary')
                         title_options_content = result.get('title_options', [])
-                        if project_name and refined_content:
+                        if project_name and content_to_save:
                             saved_path = auto_save_manager.save_refined_blog(
                                 project_name=project_name,
-                                refined_content=refined_content,
+                                content=content_to_save,
                                 summary=summary_content,
                                 title_options=title_options_content,
                                 project_id=project_id,
@@ -2027,9 +2035,14 @@ class RefinementUI:
                             with col_load:
                                 if st.button("Load", key=f"load_refined_{i}"):
                                     try:
-                                        # Load the refined content
-                                        loaded_refined = auto_save_manager.load_refined_content(refined_info["file_path"])
-                                        SessionManager.set('refined_draft', loaded_refined)
+                                        # Load the full refined blog data
+                                        blog_data = auto_save_manager.load_refined_blog_data(refined_info["file_path"])
+                                        content = blog_data.get("content")
+                                        # Set both refined_draft and formatted_draft to the same content
+                                        SessionManager.set('refined_draft', content)
+                                        SessionManager.set('formatted_draft', content)
+                                        SessionManager.set('summary', blog_data.get("summary"))
+                                        SessionManager.set('title_options', blog_data.get("title_options"))
                                         SessionManager.set('current_project_id', refined_info.get("project_id"))
                                         SessionManager.set_status("Refined blog loaded successfully from saved file.")
                                         st.success(f"✅ Loaded refined blog: {refined_info['filename']}")
@@ -2047,32 +2060,35 @@ class RefinementUI:
 
         # Display Refinement Results
         refined_draft = SessionManager.get('refined_draft')
+        formatted_draft = SessionManager.get('formatted_draft')
+        # Prefer formatted version, fall back to refined
+        display_draft = formatted_draft or refined_draft
         summary = SessionManager.get('summary')
         title_options = SessionManager.get('title_options') # This should be List[Dict]
 
-        if refined_draft:
+        if display_draft:
             st.markdown("---")
             st.subheader("Refined Blog Draft")
             col1, col2 = st.columns(2)
-            
+
             with col1:
                 st.download_button(
                     label="Download Refined Draft (.md)",
-                    data=refined_draft,
+                    data=display_draft,
                     file_name=f"{project_name}_refined_draft.md",
                     mime="text/markdown",
                     key="dl_refined_refine_tab" # Static unique key
                 )
-            
+
             with col2:
                 # Complete package download (without social content yet)
                 package = create_complete_blog_package()
                 if package:
                     zip_data = create_zip_download(package)
-                    
+
                     file_count = len(package)
                     safe_name = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in project_name)
-                    
+
                     st.download_button(
                         label=f"📦 Blog Package ({file_count} files)",
                         data=zip_data,
@@ -2082,7 +2098,7 @@ class RefinementUI:
                         help="Downloads complete blog package: drafts, summary, and title options"
                     )
             with st.expander("Preview Refined Draft", expanded=True):
-                st.markdown(refined_draft)
+                st.markdown(display_draft)
 
         if summary:
              st.subheader("Generated Summary")
@@ -2106,10 +2122,12 @@ class SocialPostsUI:
     def render(self):
         st.header("4. Generate Social Media Content") # Updated header number
 
-        # Check for refined draft
+        # Check for refined draft (prefer formatted version)
+        formatted_draft = SessionManager.get('formatted_draft')
         refined_draft = SessionManager.get('refined_draft')
-        
-        if not refined_draft:
+        available_draft = formatted_draft or refined_draft
+
+        if not available_draft:
             st.info("📁 **Upload your refined blog to generate social media content**")
             
             # Upload section for refined blog
@@ -2166,12 +2184,14 @@ class SocialPostsUI:
                             base_url=SessionManager.get('api_base_url')
                         ))
                     else:
-                        # Use standalone social content generation for uploaded drafts
+                        # Use standalone social content generation for uploaded drafts (prefer formatted version)
+                        formatted_content = SessionManager.get('formatted_draft')
                         refined_content = SessionManager.get('refined_draft')
+                        blog_content = formatted_content or refined_content
                         selected_model = SessionManager.get('selected_model', 'claude')
                         result = asyncio.run(api_client.generate_social_content_standalone(
                             project_name=project_name,
-                            refined_blog_content=refined_content,
+                            refined_blog_content=blog_content,
                             model_name=selected_model,
                             specific_model=SessionManager.get('specific_model'),
                             base_url=SessionManager.get('api_base_url')
@@ -2288,7 +2308,8 @@ class SocialPostsUI:
                 st.markdown("**Complete Package:**")
                 
                 # Check if we have enough content for a complete package
-                has_refined_blog = SessionManager.get('refined_draft') is not None
+                has_refined_blog = (SessionManager.get('formatted_draft') is not None or
+                                   SessionManager.get('refined_draft') is not None)
                 has_final_blog = SessionManager.get('final_draft') is not None
                 
                 if has_refined_blog or has_final_blog:
@@ -2445,7 +2466,8 @@ class BloggingAssistantAPIApp:
         # Check completion status for each milestone
         has_outline = SessionManager.get('generated_outline') is not None
         has_draft = SessionManager.get('final_draft') is not None
-        has_refined = SessionManager.get('refined_draft') is not None
+        has_refined = (SessionManager.get('formatted_draft') is not None or
+                      SessionManager.get('refined_draft') is not None)
         has_social = SessionManager.get('social_content') is not None
         
         # Generate labels with status indicators

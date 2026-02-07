@@ -8,6 +8,15 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 import os
 
+# Ensure backend modules that initialize Supabase clients at import time don't fail test collection.
+# The Supabase client validates key shape as a JWT; we provide a syntactically valid dummy.
+os.environ.setdefault("SUPABASE_URL", "https://example.supabase.co")
+os.environ.setdefault(
+    "SUPABASE_ANON_KEY",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.signature",
+)
+os.environ.setdefault("SUPABASE_KEY", os.environ["SUPABASE_ANON_KEY"])
+
 import sys
 # Add root directory to path to allow imports from backend
 # root/backend/tests/conftest.py -> root

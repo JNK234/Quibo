@@ -12,12 +12,43 @@ from backend.agents.blog_refinement.nodes import (
     generate_conclusion_node,
     generate_summary_node,
     generate_titles_node,
-    suggest_clarity_flow_node,
-    reduce_redundancy_node,
+    format_draft_node,
     assemble_refined_draft_node
 )
+from backend.agents.blog_refinement.formatting_validator import validate_formatting_node
 
 logger = logging.getLogger(__name__)
+
+
+def should_retry_formatting(state: BlogRefinementState) -> str:
+    """Determine whether to retry formatting or proceed.
+
+    Returns:
+        "retry" if should retry, "complete" if done
+    """
+    max_attempts = 3
+    threshold_score = 0.85
+
+    # Check if we've hit max attempts
+    if state.formatting_attempts >= max_attempts:
+        logger.warning(
+            f"Max formatting attempts ({max_attempts}) reached, "
+            f"proceeding with score: {state.formatting_validation_score}"
+        )
+        return "complete"
+
+    # Check validation score
+    if state.formatting_validation_score is not None and state.formatting_validation_score >= threshold_score:
+        logger.info(f"Formatting validation passed with score {state.formatting_validation_score:.0%}")
+        return "complete"
+
+    # Retry with feedback
+    logger.info(
+        f"Formatting validation score {state.formatting_validation_score:.0%} "
+        f"below threshold, retrying (attempt {state.formatting_attempts + 1})"
+    )
+    return "retry"
+
 
 # --- Graph Creation ---
 
@@ -29,9 +60,9 @@ async def create_refinement_graph() -> StateGraph:
     graph.add_node("generate_conclusion", generate_conclusion_node)
     graph.add_node("generate_summary", generate_summary_node)
     graph.add_node("generate_titles", generate_titles_node)
-    graph.add_node("suggest_clarity_flow", suggest_clarity_flow_node)
-    graph.add_node("reduce_redundancy", reduce_redundancy_node)
+    graph.add_node("format_draft", format_draft_node)
     graph.add_node("assemble_draft", assemble_refined_draft_node)
+    graph.add_node("validate_formatting", validate_formatting_node)
 
     # --- Define Conditional Logic ---
     def should_continue(state: BlogRefinementState) -> str:
@@ -47,9 +78,19 @@ async def create_refinement_graph() -> StateGraph:
     graph.add_edge("generate_introduction", "generate_conclusion")
     graph.add_edge("generate_conclusion", "generate_summary")
     graph.add_edge("generate_summary", "generate_titles")
-    graph.add_edge("generate_titles", "assemble_draft") # Titles goes to assemble
-    graph.add_edge("assemble_draft", "suggest_clarity_flow") # Assemble goes directly to clarity/flow
-    graph.add_edge("suggest_clarity_flow", END) # Clarity/flow is the last step before END
+    graph.add_edge("generate_titles", "assemble_draft")
+    graph.add_edge("assemble_draft", "format_draft")
+    # Add validation after formatting
+    graph.add_edge("format_draft", "validate_formatting")
+    # Conditional retry loop: retry formatting or complete
+    graph.add_conditional_edges(
+        "validate_formatting",
+        should_retry_formatting,
+        {
+            "retry": "format_draft",
+            "complete": END
+        }
+    )
 
     # Compile the graph into a runnable application
     app = graph.compile()

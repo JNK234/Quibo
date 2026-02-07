@@ -48,6 +48,9 @@ root/data/projects/
 .claude/
 .claude_history
 
+# GSD Planning (local-only)
+.planning/
+
 # IDEs
 .vscode/
 .idea/

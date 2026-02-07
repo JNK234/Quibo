@@ -145,20 +145,22 @@ Stage: blog_draft
             logger.error(f"Failed to save blog draft for project {project_name}: {e}")
             raise
     
-    def save_refined_blog(self, project_name: str, refined_content: str,
+    def save_refined_blog(self, project_name: str, content: str,
                          summary: str = None, title_options: List[Dict] = None,
-                         job_id: str = None, add_timestamp: bool = True) -> str:
+                         project_id: str = None, job_id: str = None,
+                         add_timestamp: bool = True) -> str:
         """
-        Save refined blog content along with summary and title options.
-        
+        Save refined blog content (formatted version) along with summary and title options.
+
         Args:
             project_name: Name of the project
-            refined_content: The refined blog content
+            content: The formatted refined blog content
             summary: Generated summary
             title_options: List of title/subtitle options
+            project_id: Project ID
             job_id: Optional job ID
             add_timestamp: Whether to add timestamp to avoid overwrites
-        
+
         Returns:
             Path to the saved file
         """
@@ -176,9 +178,26 @@ Stage: blog_draft
             
             file_path = project_dir / filename
             
-            # Build the complete refined content
+            # Save content to JSON for easy retrieval
+            save_data = {
+                "project_name": project_name,
+                "project_id": project_id,
+                "job_id": job_id,
+                "saved_at": datetime.now().isoformat(),
+                "stage": "refined_blog",
+                "content": content,
+                "summary": summary,
+                "title_options": title_options
+            }
+
+            # Save to JSON file
+            json_file_path = file_path.with_suffix('.json')
+            with open(json_file_path, 'w', encoding='utf-8') as f:
+                json.dump(save_data, f, indent=2, ensure_ascii=False)
+
+            # Also save a markdown file with the content
             content_parts = []
-            
+
             # Metadata header
             content_parts.append(f"""<!--
 Project: {project_name}
@@ -188,7 +207,7 @@ Stage: refined_blog
 -->
 
 """)
-            
+
             # Add title options if available
             if title_options:
                 content_parts.append("<!-- TITLE OPTIONS:\n")
@@ -199,15 +218,15 @@ Stage: refined_blog
                     content_parts.append(f"  Reasoning: {option.get('reasoning', 'N/A')}")
                     content_parts.append("")
                 content_parts.append("-->\n\n")
-            
+
             # Add summary if available
             if summary:
                 content_parts.append(f"<!-- SUMMARY: {summary} -->\n\n")
-            
-            # Add the refined content
-            content_parts.append(refined_content)
-            
-            # Save to file
+
+            # Add the content
+            content_parts.append(content)
+
+            # Save to markdown file
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write("".join(content_parts))
             
@@ -291,42 +310,65 @@ Stage: refined_blog
     
     def list_saved_refined_blogs(self, project_name: str) -> List[Dict[str, Any]]:
         """List all saved refined blogs for a project."""
+        import re
         try:
             project_dir = self._get_project_dir(project_name)
             refined_blogs = []
-            
+
+            # Look for JSON files first (new format with formatted_content)
+            for file_path in project_dir.glob("refined_blog*.json"):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+
+                    refined_blogs.append({
+                        "file_path": str(file_path),
+                        "filename": file_path.name,
+                        "saved_at": data.get("saved_at"),
+                        "job_id": data.get("job_id"),
+                        "project_id": data.get("project_id")
+                    })
+                except Exception as e:
+                    logger.warning(f"Could not read refined blog JSON file {file_path}: {e}")
+
+            # Also look for old MD files (for backward compatibility)
             for file_path in project_dir.glob("refined_blog*.md"):
+                # Skip if there's a corresponding JSON file
+                json_path = file_path.with_suffix('.json')
+                if json_path.exists():
+                    continue
+
                 try:
                     # Read the first few lines to get metadata
                     with open(file_path, 'r', encoding='utf-8') as f:
                         content = f.read(1000)  # Read first 1000 chars for metadata
-                    
+
                     # Extract metadata from HTML comments
                     saved_at = "Unknown"
                     job_id = None
                     if "Saved at:" in content:
-                        import re
                         saved_match = re.search(r'Saved at: ([^\n]+)', content)
                         if saved_match:
                             saved_at = saved_match.group(1)
-                        
+
                         job_match = re.search(r'Job ID: ([^\n]+)', content)
                         if job_match and job_match.group(1) != 'N/A':
                             job_id = job_match.group(1)
-                    
+
                     refined_blogs.append({
                         "file_path": str(file_path),
                         "filename": file_path.name,
                         "saved_at": saved_at,
-                        "job_id": job_id
+                        "job_id": job_id,
+                        "project_id": None
                     })
                 except Exception as e:
                     logger.warning(f"Could not read refined blog file {file_path}: {e}")
-            
+
             # Sort by modification time, newest first
             refined_blogs.sort(key=lambda x: os.path.getmtime(x["file_path"]), reverse=True)
             return refined_blogs
-            
+
         except Exception as e:
             logger.error(f"Failed to list refined blogs for project {project_name}: {e}")
             return []
@@ -367,12 +409,12 @@ Stage: refined_blog
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
+
             # Remove metadata header and title/summary comments
             lines = content.split('\n')
             content_lines = []
             in_comment = False
-            
+
             for line in lines:
                 if line.strip().startswith('<!--'):
                     in_comment = True
@@ -381,9 +423,63 @@ Stage: refined_blog
                     continue
                 elif not in_comment:
                     content_lines.append(line)
-            
+
             return '\n'.join(content_lines).strip()
-            
+
         except Exception as e:
             logger.error(f"Failed to load refined content from {file_path}: {e}")
+            raise
+
+    def load_refined_blog_data(self, file_path: str) -> Dict[str, Any]:
+        """
+        Load full refined blog data from JSON file.
+
+        Returns a dictionary with keys: content, summary, title_options, project_id
+        For backward compatibility, also handles old MD files.
+        """
+        try:
+            path = Path(file_path)
+
+            # New JSON format
+            if path.suffix == '.json':
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                return {
+                    "content": data.get("content"),
+                    "summary": data.get("summary"),
+                    "title_options": data.get("title_options"),
+                    "project_id": data.get("project_id")
+                }
+
+            # Old MD format - backward compatibility
+            else:
+                with open(path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                # Remove metadata header and title/summary comments
+                lines = content.split('\n')
+                content_lines = []
+                in_comment = False
+
+                for line in lines:
+                    if line.strip().startswith('<!--'):
+                        in_comment = True
+                    elif line.strip().endswith('-->'):
+                        in_comment = False
+                        continue
+                    elif not in_comment:
+                        content_lines.append(line)
+
+                content = '\n'.join(content_lines).strip()
+
+                return {
+                    "content": content,
+                    "summary": None,
+                    "title_options": None,
+                    "project_id": None
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to load refined blog data from {file_path}: {e}")
             raise

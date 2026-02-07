@@ -968,7 +968,10 @@ class SupabaseProjectManager:
             # Add refined blog content if available
             refined_milestone = project_state["milestones"].get(MilestoneType.BLOG_REFINED.value)
             if refined_milestone:
-                content = refined_milestone.get("data", {}).get("refined_content", "")
+                # Use formatted_draft as primary, fall back to refined_content/refined_draft for backward compatibility
+                content = (refined_milestone.get("data", {}).get("formatted_draft") or
+                          refined_milestone.get("data", {}).get("refined_content") or
+                          refined_milestone.get("data", {}).get("refined_draft", ""))
                 md_content.append(content)
             else:
                 # Try draft content

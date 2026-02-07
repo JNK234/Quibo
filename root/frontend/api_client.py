@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 import json
 import streamlit as st
+from urllib.parse import quote
 
 from config import API_BASE_URL
 from utils.auth import get_auth_headers
@@ -24,7 +25,12 @@ DEFAULT_API_BASE_URL = API_BASE_URL
 # --- Helper Functions ---
 def _get_api_url(endpoint: str, base_url: str = DEFAULT_API_BASE_URL) -> str:
     """Constructs the full API URL."""
-    return f"{base_url.rstrip('/')}/{endpoint.lstrip('/')}"
+    # URL-encode the endpoint to handle spaces and special characters in project names
+    # Split by / and encode each segment, then rejoin
+    segments = endpoint.lstrip('/').split('/')
+    encoded_segments = [quote(segment, safe='') for segment in segments]
+    encoded_endpoint = '/'.join(encoded_segments)
+    return f"{base_url.rstrip('/')}/{encoded_endpoint}"
 
 
 def _get_headers(base_url: str = DEFAULT_API_BASE_URL) -> Dict[str, str]:
@@ -437,13 +443,17 @@ async def refine_blog(
     if social_config:
         data["social_config"] = social_config
 
-    async with httpx.AsyncClient(timeout=300.0) as client: # Long timeout for refinement
+    # Refinement can take a while (formatting retries + large drafts).
+    async with httpx.AsyncClient(timeout=900.0) as client:
         try:
             logger.info(f"Requesting blog refinement for project {project_id} at {api_url}")
             response = await client.post(api_url, data=data, headers=headers)
             return await _handle_response(response)
+        except httpx.TimeoutException as e:
+            logger.error(f"Blog refinement timed out: {type(e).__name__} - {repr(e)}")
+            raise TimeoutError(f"API timeout during blog refinement: {e}")
         except httpx.RequestError as e:
-            logger.error(f"HTTP request failed during blog refinement: {e}")
+            logger.error(f"HTTP request failed during blog refinement: {type(e).__name__} - {repr(e)}")
             raise ConnectionError(f"Failed to connect to API for blog refinement: {e}")
 
 
@@ -485,13 +495,16 @@ async def refine_standalone(
     if social_config:
         data["social_config"] = social_config
 
-    async with httpx.AsyncClient(timeout=300.0) as client: # Long timeout for refinement
+    async with httpx.AsyncClient(timeout=900.0) as client:
         try:
             logger.info(f"Requesting standalone refinement for project {project_name} at {api_url}")
             response = await client.post(api_url, data=data, headers=headers)
             return await _handle_response(response)
+        except httpx.TimeoutException as e:
+            logger.error(f"Standalone refinement timed out: {type(e).__name__} - {repr(e)}")
+            raise TimeoutError(f"API timeout during standalone refinement: {e}")
         except httpx.RequestError as e:
-            logger.error(f"HTTP request failed during standalone refinement: {e}")
+            logger.error(f"HTTP request failed during standalone refinement: {type(e).__name__} - {repr(e)}")
             raise ConnectionError(f"Failed to connect to API for standalone refinement: {e}")
 
 

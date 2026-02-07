@@ -182,7 +182,7 @@ class TestProjectCreation:
         assert id1 != id2 != id3
         assert len({id1, id2, id3}) == 3
     
-    @patch('root.backend.services.project_manager.ProjectManager._atomic_write')
+    @patch('backend.services.project_manager.ProjectManager._atomic_write')
     def test_create_project_atomic_write_failure(self, mock_atomic_write, project_manager: ProjectManager):
         """Test project creation handles atomic write failure."""
         # Arrange
@@ -968,13 +968,15 @@ class TestEdgeCasesAndErrorHandling:
         """Test behavior when disk space is exhausted."""
         # Mock the OS to simulate disk full error
         with patch('tempfile.mkstemp', side_effect=OSError("No space left on device")):
-            # Act & Assert
-            with pytest.raises(OSError):
-                project_manager.save_milestone(
-                    created_project,
-                    MilestoneType.OUTLINE_GENERATED,
-                    {"large_data": "x" * 10000}
-                )
+            # Act
+            success = project_manager.save_milestone(
+                created_project,
+                MilestoneType.OUTLINE_GENERATED,
+                {"large_data": "x" * 10000}
+            )
+
+            # Assert
+            assert success is False
     
     def test_permission_errors(self, project_manager: ProjectManager, temp_project_dir: Path):
         """Test handling of permission errors."""

@@ -5,6 +5,8 @@ Prompts for the Blog Refinement Agent.
 
 # --- Introduction Generation ---
 GENERATE_INTRODUCTION_PROMPT = """
+{persona_instructions}
+
 You are an expert technical writer tasked with creating a compelling introduction for a blog post.
 The full draft of the blog post is provided below.
 
@@ -27,6 +29,8 @@ Provide *only* the raw text for the introduction paragraph. Do NOT include any m
 
 # --- Conclusion Generation ---
 GENERATE_CONCLUSION_PROMPT = """
+{persona_instructions}
+
 You are an expert technical writer tasked with creating a concise and impactful conclusion for a blog post.
 The full draft of the blog post is provided below.
 
@@ -49,6 +53,8 @@ Provide *only* the raw text for the conclusion paragraph. Do NOT include any mar
 
 # --- Summary Generation ---
 GENERATE_SUMMARY_PROMPT = """
+{persona_instructions}
+
 You are an expert technical writer tasked with creating a concise summary of a blog post.
 The full draft of the blog post is provided below.
 
@@ -67,6 +73,8 @@ Provide *only* the raw text for the summary. Do NOT include any markdown formatt
 
 # --- Title/Subtitle Generation ---
 GENERATE_TITLES_PROMPT = """
+{persona_instructions}
+
 You are an expert copywriter and SEO specialist tasked with generating compelling titles and subtitles for a blog post.
 The full draft of the blog post is provided below.
 
@@ -191,7 +199,7 @@ Focus on titles that authentically represent both the content depth and the expe
 """
 
 # --- Main Content Formatting ---
-FORMAT_MAIN_CONTENT_PROMPT = """
+FORMAT_MAIN_CONTENT_PROMPT = r"""
 You are an expert technical editor and Markdown formatter.
 The raw draft of a blog post's main content is provided below.
 
@@ -263,63 +271,154 @@ Choosing the right activation function is important for model performance.
 # --- Content Enhancement and Flow Optimization ---
 SUGGEST_CLARITY_FLOW_IMPROVEMENTS_PROMPT = """
 You are an expert technical editor tasked with enhancing a blog post draft for clarity, flow, and engagement.
-The full draft is provided below.
+
+**CRITICAL WARNING: You MUST preserve ALL content. Do NOT remove or summarize ANY text.**
+
+This is a flow/CLARITY improvement task, NOT a shortening or summarization task.
+The output MUST contain ALL the same content as the input, with ADDITIONS ONLY (transitions, clarity improvements).
 
 **Blog Draft:**
 ```markdown
 {blog_draft}
 ```
 
-**Task:**
-Review and improve the draft while **PRESERVING ALL CONTENT AND WORD COUNT**. Focus on:
+**YOUR TASK:**
+Improve the draft's clarity and flow while STRICTLY PRESERVING all content.
 
-1. **Remove Duplicates**: Identify and remove exact duplicate headings/sections (keep first instance)
-2. **Improve Transitions**: Add connecting sentences between sections that feel disconnected
-3. **Fix Flow Issues**: Rephrase awkward transitions, ensure logical progression
-4. **Format Consistency**: Standardize heading levels, code blocks, LaTeX formatting
-5. **Language Polish**: Fix grammar, typos, clarify ambiguous sentences (without removing detail)
+**WHAT YOU MAY DO:**
+1. Add transitional sentences between disconnected sections
+2. Rephrase awkward sentences for better readability (keep same meaning)
+3. Fix obvious typos and grammar errors
+4. Standardize heading levels (## for sections, ### for subsections)
+5. Remove EXACT duplicate paragraphs (keep first instance only)
 
-**CRITICAL CONSTRAINTS**:
-- DO NOT remove any technical details, examples, or explanations
-- Maintain approximately the same word count (±5%)
-- DO NOT summarize or consolidate sections
-- Preserve all code blocks, formulas, and tables
-- Preserve any image recommendation blocks exactly as-is. These appear like:
-  - `[IMAGE_PLACEHOLDER: ...]` followed by metadata lines (Alt text / Placement / Purpose, etc.)
-- Keep every unique piece of information
+**ABSOLUTE PRESERVATION REQUIREMENTS (NEVER VIOLATE):**
+❌ NEVER remove or summarize technical explanations
+❌ NEVER consolidate multiple examples into one
+❌ NEVER shorten paragraphs or remove sentences
+❌ NEVER alter code blocks (preserve exactly, including comments and whitespace)
+❌ NEVER modify LaTeX formulas (keep $...$ and $$...$$ exactly as-is)
+❌ NEVER remove or rewrite [IMAGE_PLACEHOLDER: ...] blocks
+❌ NEVER remove bullet points or list items
+❌ NEVER change technical terminology
+
+**PRESERVATION CHECKLIST (verify before outputting):**
+✓ Every code block from input appears in output
+✓ Every LaTeX formula from input appears in output
+✓ Every [IMAGE_PLACEHOLDER: ...] from input appears in output
+✓ Output word count is within ±5% of input (additions OK, reductions NOT OK)
+✓ All section headings preserved
+✓ All bullet/numbered lists preserved
 
 **Output:**
-Provide the COMPLETE enhanced draft, outputting ONLY the fully formatted markdown content.
+The COMPLETE improved draft as markdown. Output ONLY the markdown content, no explanations.
 """
 
-# --- Redundancy Reduction ---
-REDUCE_REDUNDANCY_PROMPT = """
-You are an expert technical editor specializing in content optimization and redundancy reduction.
-The full draft of the blog post is provided below.
+# --- Structure Analysis for Intelligent Formatting ---
 
-**Blog Draft:**
+STRUCTURE_ANALYSIS_PROMPT = """
+You are an expert technical editor and content architect tasked with analyzing a blog post structure and creating an intelligent formatting plan.
+
+**Blog Draft to Analyze:**
 ```markdown
 {blog_draft}
 ```
 
-**Task:**
-Analyze the blog post for redundant content and produce a refined version with redundancies removed or reduced.
-Focus on:
+**YOUR TASK:**
+Analyze the blog structure and create a detailed formatting plan that will guide the chunked formatting process. Your analysis must be intelligent and context-aware, not cookie-cutter rules.
 
-1. **Repeated Information**: Identify and consolidate information that appears multiple times throughout the post
-2. **Overlapping Sections**: Merge sections that cover similar topics
-3. **Redundant Examples**: Keep only the most illustrative examples when multiple similar ones exist
-4. **Verbose Phrasing**: Replace wordy expressions with concise alternatives
-5. **Circular Arguments**: Remove content that reiterates the same point without adding new value
+**ANALYSIS RESPONSIBILITIES:**
 
-**Important Guidelines:**
-- Preserve all unique and valuable information
-- Maintain the logical flow and structure of the content
-- Keep the technical accuracy intact
-- Ensure that removing redundancy doesn't create gaps in understanding
-- Retain at least one instance of important concepts for clarity
-- Preserve any image recommendation blocks exactly as-is (e.g., `[IMAGE_PLACEHOLDER: ...]` blocks and their metadata lines). Do NOT delete or rewrite these.
+1. **Identify Blog Structure**:
+   - Locate introduction section (where does it start/end?)
+   - Identify main content sections (what are the H2 headings?)
+   - Find conclusion section (where does it start?)
+   - Note any special content areas (code-heavy, image-heavy, theory-heavy)
 
-**Output:**
-Provide the complete refined blog post with redundancies removed. Output only the markdown content without any explanations or meta-commentary.
+2. **Determine Formatting Strategy**:
+   - Where should TL;DR be placed? (always at top, but exact position matters)
+   - Which sections need callout boxes? (identify 3-5 key insights worth highlighting)
+   - Where should horizontal dividers be placed? (between major sections)
+   - Which sentences are pull-quote worthy? (memorable, impactful quotes)
+   - Where should image placeholders help? (dense technical sections, workflows)
+
+3. **Create Chunking Plan**:
+   - Divide blog into logical chunks for parallel formatting (3-7 chunks typically)
+   - Each chunk should be coherent and have a clear purpose
+   - Chunks can be: intro + TL;DR, body section 1, body section 2, conclusion
+   - Chunk size: 500-1500 words per chunk (optimize for LLM processing)
+
+**ANALYSIS PRINCIPLES:**
+
+- **Context-Aware**: Consider what the blog is ABOUT when making formatting decisions
+  - Technical tutorial: Callout for pro tips or warnings
+  - Theory explanation: Key insights and definitions
+  - Case study: Results and takeaways
+
+- **Content-Aware**: Format based on actual content, not generic rules
+  - Dense code sections: Maybe 1 callout + code context, not 3
+  - Long explanation: Multiple callouts for different concepts
+  - Short post: Focused formatting, don't over-format
+
+- **Flow-Conscious**: Format should enhance flow, not disrupt it
+  - Don't put TL;DR in random place - has logical spot
+  - Dividers should mark natural content breaks
+  - Callouts should complement surrounding text
+
+**NOT HARDCODING:**
+- You're NOT using generic rules like "put callouts every 500 words"
+- You're analyzing THIS SPECIFIC blog and making CUSTOM decisions
+- Your formatting plan should reflect unique structure and content
+
+**OUTPUT FORMAT:**
+Provide a JSON response with the analysis:
+
+```json
+{{
+  "blog_summary": "One-sentence summary of what this blog is about",
+  "structure": {{
+    "introduction": {{"start_line": 1, "end_line": 25, "main_topic": "..."}},
+    "main_sections": [
+      {{"heading": "Section Title", "start_line": 26, "end_line": 120, "content_type": "theory|code|mix"}}
+    ],
+    "conclusion": {{"start_line": 121, "end_line": 140, "key_takeaway": "..."}}
+  }},
+  "formatting_plan": {{
+    "tldr_placement": "after_intro|before_first_section",
+    "callouts": [
+      {{"type": "pro_tip|key_insight|warning", "location": "section_heading_or_line_range", "reason": "why this insight matters"}}
+    ],
+    "dividers": [
+      {{"place_after": "Section Title", "reason": "major section transition"}}
+    ],
+    "pull_quotes": [
+      {{"line_range": [45, 46], "reason": "memorable insight worth highlighting"}}
+    ],
+    "image_placeholders": [
+      {{"location": "section_heading_or_line_range", "purpose": "what the image should illustrate"}}
+    ]
+  }},
+  "chunking_plan": {{
+    "chunks": [
+      {{"id": 1, "type": "intro_with_tldr", "content_range": [1, 50], "description": "Introduction + TL;DR section"}},
+      {{"id": 2, "type": "body_section", "content_range": [51, 150], "description": "First main content section"}},
+      {{"id": 3, "type": "body_section", "content_range": [151, 250], "description": "Second main content section"}},
+      ...
+    ],
+    "total_chunks": N,
+    "chunking_rationale": "Why these chunks make sense for this blog"
+  }}
+}}
+```
+
+**CRITICAL OUTPUT REQUIREMENTS:**
+- Output ONLY the JSON, no markdown formatting, no explanations
+- Ensure line numbers are accurate (you're analyzing the given blog)
+- Provide at least 3 callout suggestions (unless blog is very short)
+- Provide 2-4 image placeholder suggestions where visuals would help
+- Create 3-7 logical chunks based on actual content structure
+- All "reason" fields must explain WHY this formatting decision makes sense
+
+**NO COOKIE-CUTTER FORMATTING:**
+Your formatting plan must be tailored to THIS SPECIFIC blog based on YOUR analysis of its content, structure, and topic.
 """

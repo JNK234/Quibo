@@ -38,7 +38,8 @@ class GeminiModel:
                 google_api_key=self.api_key,
                 temperature=temperature,
                 max_output_tokens=max_tokens,
-                convert_system_message_to_human=True # Recommended for Gemini
+                convert_system_message_to_human=True, # Recommended for Gemini,
+                timeout=600
             )
             logger.info(f"GeminiModel initialized with LangChain wrapper for model: {self.model_name}")
         except Exception as e:
