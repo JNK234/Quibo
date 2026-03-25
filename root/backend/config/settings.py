@@ -55,7 +55,7 @@ class GeminiSettings(ModelSettings):
 
 @dataclass
 class OpenRouterSettings(ModelSettings):
-    base_url: str = " https://openrouter.ai/api/v1/chat/completions"
+    base_url: str = "https://openrouter.ai/api/v1/chat/completions"
     model_name: str = "x-ai/grok-4"
     headers: dict = field(default_factory=lambda: {
         "HTTP-Referer": os.getenv('OPENROUTER_REFERER_URL'),
