@@ -64,7 +64,7 @@ class OpenRouterModel:
 
             # Check for successful response
             if response.status_code == 200:
-                return response.json()["choices"][0]["message"]["content"]
+                return self.extract_response(response.json()["choices"][0]["message"]["content"])
             else:
                 error_msg = f"OpenRouter API error: {response.status_code}, {response.text}"
                 logging.error(error_msg)
