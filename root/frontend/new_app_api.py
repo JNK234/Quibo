@@ -141,10 +141,15 @@ class SessionManager:
             'summary', 'title_options', 'social_content', 'current_section_index', 'total_sections',
             'is_initialized', 'error_message'
         ]
+        dict_keys = {'processed_file_hashes', 'generated_sections'}
+        list_keys = {'uploaded_files_info', 'processed_file_paths', 'python_hashes'}
         for key in keys_to_reset:
-            st.session_state.api_app_state[key] = None if key not in ['uploaded_files_info', 'processed_file_paths', 
-                                                                     'processed_file_hashes', 'python_hashes', 
-                                                                     'generated_sections'] else []
+            if key in dict_keys:
+                st.session_state.api_app_state[key] = {}
+            elif key in list_keys:
+                st.session_state.api_app_state[key] = []
+            else:
+                st.session_state.api_app_state[key] = None
         st.session_state.api_app_state['current_section_index'] = 0
         st.session_state.api_app_state['total_sections'] = 0
         st.session_state.api_app_state['is_initialized'] = False
