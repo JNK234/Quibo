@@ -137,7 +137,7 @@ class SupabaseProjectManager:
             if user_id:
                 data["user_id"] = user_id
 
-            result = self.supabase.table("projects").insert(data).execute()
+            result = await asyncio.to_thread(lambda: self.supabase.table("projects").insert(data).execute())
 
             if not result.data:
                 raise Exception("Failed to create project: no data returned")
@@ -160,7 +160,7 @@ class SupabaseProjectManager:
             Project data dict or None if not found
         """
         try:
-            result = self.supabase.table("projects").select("*").eq("id", project_id).execute()
+            result = await asyncio.to_thread(lambda: self.supabase.table("projects").select("*").eq("id", project_id).execute())
 
             if not result.data:
                 logger.warning(f"Project {project_id} not found")
@@ -196,9 +196,9 @@ class SupabaseProjectManager:
             Project data dict or None if not found
         """
         try:
-            result = self.supabase.table("projects").select("*").eq(
+            result = await asyncio.to_thread(lambda: self.supabase.table("projects").select("*").eq(
                 "name", project_name
-            ).eq("status", ProjectStatus.ACTIVE.value).execute()
+            ).eq("status", ProjectStatus.ACTIVE.value).execute())
 
             if not result.data:
                 return None
@@ -239,7 +239,7 @@ class SupabaseProjectManager:
                 status_value = status if isinstance(status, str) else status.value
                 query = query.eq("status", status_value)
 
-            result = query.order("updated_at", desc=True).execute()
+            result = await asyncio.to_thread(lambda: query.order("updated_at", desc=True).execute())
 
             projects = []
             for p in result.data:
@@ -267,10 +267,10 @@ class SupabaseProjectManager:
             async with await self._get_lock(project_id):
                 now = datetime.utcnow().isoformat()
 
-                result = self.supabase.table("projects").update({
+                result = await asyncio.to_thread(lambda: self.supabase.table("projects").update({
                     "status": ProjectStatus.ARCHIVED.value,
                     "archived_at": now
-                }).eq("id", project_id).execute()
+                }).eq("id", project_id).execute())
 
                 if not result.data:
                     return False
@@ -287,18 +287,18 @@ class SupabaseProjectManager:
         try:
             async with await self._get_lock(project_id):
                 # Check if project exists first
-                existing = self.supabase.table("projects").select("id").eq("id", project_id).execute()
+                existing = await asyncio.to_thread(lambda: self.supabase.table("projects").select("id").eq("id", project_id).execute())
                 if not existing.data:
                     logger.warning(f"Project {project_id} not found for deletion")
                     return False
 
                 if permanent:
-                    result = self.supabase.table("projects").delete().eq("id", project_id).execute()
+                    result = await asyncio.to_thread(lambda: self.supabase.table("projects").delete().eq("id", project_id).execute())
                     logger.info(f"Permanently deleted project {project_id}")
                 else:
-                    result = self.supabase.table("projects").update({
+                    result = await asyncio.to_thread(lambda: self.supabase.table("projects").update({
                         "status": ProjectStatus.DELETED.value
-                    }).eq("id", project_id).execute()
+                    }).eq("id", project_id).execute())
                     logger.info(f"Soft deleted project {project_id}")
 
                 # Consistent check: if no data returned, operation failed
@@ -331,39 +331,39 @@ class SupabaseProjectManager:
         try:
             async with await self._get_lock(project_id):
                 # Check if project exists
-                project_result = self.supabase.table("projects").select("id").eq("id", project_id).execute()
+                project_result = await asyncio.to_thread(lambda: self.supabase.table("projects").select("id").eq("id", project_id).execute())
                 if not project_result.data:
                     logger.error(f"Project {project_id} not found")
                     return False
 
                 # Check if milestone already exists
-                existing_result = self.supabase.table("milestones").select("*").eq(
+                existing_result = await asyncio.to_thread(lambda: self.supabase.table("milestones").select("*").eq(
                     "project_id", project_id
-                ).eq("type", milestone_type.value).execute()
+                ).eq("type", milestone_type.value).execute())
 
                 now = datetime.utcnow().isoformat()
 
                 if existing_result.data:
                     # Update existing milestone
-                    self.supabase.table("milestones").update({
+                    await asyncio.to_thread(lambda: self.supabase.table("milestones").update({
                         "data": data,
                         "metadata": metadata or {},
                         "created_at": now
-                    }).eq("project_id", project_id).eq("type", milestone_type.value).execute()
+                    }).eq("project_id", project_id).eq("type", milestone_type.value).execute())
                 else:
                     # Create new milestone
-                    self.supabase.table("milestones").insert({
+                    await asyncio.to_thread(lambda: self.supabase.table("milestones").insert({
                         "project_id": project_id,
                         "type": milestone_type.value,
                         "data": data,
                         "metadata": metadata or {},
                         "created_at": now
-                    }).execute()
+                    }).execute())
 
                 # Update project's updated_at
-                self.supabase.table("projects").update({
+                await asyncio.to_thread(lambda: self.supabase.table("projects").update({
                     "updated_at": now
-                }).eq("id", project_id).execute()
+                }).eq("id", project_id).execute())
 
             logger.info(f"Saved milestone {milestone_type.value} for project {project_id}")
             return True
@@ -375,9 +375,9 @@ class SupabaseProjectManager:
     async def load_milestone(self, project_id: str, milestone_type: MilestoneType) -> Optional[Dict[str, Any]]:
         """Load a specific milestone for a project."""
         try:
-            result = self.supabase.table("milestones").select("*").eq(
+            result = await asyncio.to_thread(lambda: self.supabase.table("milestones").select("*").eq(
                 "project_id", project_id
-            ).eq("type", milestone_type.value).execute()
+            ).eq("type", milestone_type.value).execute())
 
             if not result.data:
                 logger.warning(f"Milestone {milestone_type.value} not found for project {project_id}")
@@ -402,9 +402,9 @@ class SupabaseProjectManager:
     async def get_latest_milestone(self, project_id: str) -> Optional[Dict[str, Any]]:
         """Get the latest milestone for a project."""
         try:
-            result = self.supabase.table("milestones").select("*").eq(
+            result = await asyncio.to_thread(lambda: self.supabase.table("milestones").select("*").eq(
                 "project_id", project_id
-            ).order("created_at", desc=True).limit(1).execute()
+            ).order("created_at", desc=True).limit(1).execute())
 
             if not result.data:
                 return None
@@ -428,9 +428,9 @@ class SupabaseProjectManager:
     async def get_milestones(self, project_id: str) -> List[Dict[str, Any]]:
         """Get all milestones for a project."""
         try:
-            result = self.supabase.table("milestones").select("*").eq(
+            result = await asyncio.to_thread(lambda: self.supabase.table("milestones").select("*").eq(
                 "project_id", project_id
-            ).order("created_at").execute()
+            ).order("created_at").execute())
 
             milestones = []
             for m in result.data:
@@ -494,10 +494,10 @@ class SupabaseProjectManager:
                     # This is safer than delete-then-insert as it won't lose data on partial failure
                     # Note: Supabase Python client uses REST API with JSON payloads (PostgREST),
                     # not raw SQL - all parameters are properly escaped/parameterized by the client
-                    self.supabase.table("sections").upsert(
+                    await asyncio.to_thread(lambda: self.supabase.table("sections").upsert(
                         section_records,
                         on_conflict="project_id,section_index"
-                    ).execute()
+                    ).execute())
 
                 # Only delete missing sections when explicitly requested
                 # This prevents accidental deletion during incremental single-section saves
@@ -505,9 +505,9 @@ class SupabaseProjectManager:
                     current_indices = [s.get('section_index') for s in sections if s.get('section_index') is not None]
                     if current_indices:
                         # Get existing sections
-                        existing = self.supabase.table("sections").select("section_index").eq(
+                        existing = await asyncio.to_thread(lambda: self.supabase.table("sections").select("section_index").eq(
                             "project_id", project_id
-                        ).execute()
+                        ).execute())
                         existing_indices = [s.get('section_index') for s in existing.data]
 
                         # Delete sections not in current list using batch operation
@@ -515,16 +515,16 @@ class SupabaseProjectManager:
                         # not raw SQL - all parameters are properly escaped by the client
                         indices_to_delete = [i for i in existing_indices if i not in current_indices]
                         if indices_to_delete:
-                            self.supabase.table("sections").delete().eq(
+                            await asyncio.to_thread(lambda idx=indices_to_delete: self.supabase.table("sections").delete().eq(
                                 "project_id", project_id
-                            ).in_("section_index", indices_to_delete).execute()
+                            ).in_("section_index", idx).execute())
                             logger.info(f"Deleted orphaned sections {indices_to_delete} for project {project_id}")
 
                 # Update project's updated_at
                 now = datetime.utcnow().isoformat()
-                self.supabase.table("projects").update({
+                await asyncio.to_thread(lambda: self.supabase.table("projects").update({
                     "updated_at": now
-                }).eq("id", project_id).execute()
+                }).eq("id", project_id).execute())
 
             logger.info(f"Saved {len(sections)} sections for project {project_id}")
             return True
@@ -536,9 +536,9 @@ class SupabaseProjectManager:
     async def load_sections(self, project_id: str) -> List[Dict[str, Any]]:
         """Load all sections for a project."""
         try:
-            result = self.supabase.table("sections").select("*").eq(
+            result = await asyncio.to_thread(lambda: self.supabase.table("sections").select("*").eq(
                 "project_id", project_id
-            ).order("section_index").execute()
+            ).order("section_index").execute())
 
             sections = []
             for s in result.data:
@@ -582,9 +582,9 @@ class SupabaseProjectManager:
                 if cost_delta is not None:
                     update_data["cost_delta"] = cost_delta
 
-                result = self.supabase.table("sections").update(update_data).eq(
+                result = await asyncio.to_thread(lambda: self.supabase.table("sections").update(update_data).eq(
                     "project_id", project_id
-                ).eq("section_index", section_index).execute()
+                ).eq("section_index", section_index).execute())
 
                 if not result.data:
                     logger.error(f"Section {section_index} not found for project {project_id}")
@@ -632,7 +632,7 @@ class SupabaseProjectManager:
             if duration_seconds is not None:
                 final_metadata["duration_seconds"] = duration_seconds
 
-            self.supabase.table("cost_tracking").insert({
+            await asyncio.to_thread(lambda: self.supabase.table("cost_tracking").insert({
                 "project_id": project_id,
                 "agent_name": agent_name,
                 "operation": operation,
@@ -642,7 +642,7 @@ class SupabaseProjectManager:
                 "cost": cost,
                 "metadata": final_metadata,
                 "created_at": datetime.utcnow().isoformat()
-            }).execute()
+            }).execute())
 
             logger.info(f"Tracked cost ${cost:.6f} for {agent_name}/{operation} in project {project_id}")
             return True
@@ -655,9 +655,9 @@ class SupabaseProjectManager:
         """Get cost summary for a project."""
         try:
             # Get all cost records for the project
-            result = self.supabase.table("cost_tracking").select("*").eq(
+            result = await asyncio.to_thread(lambda: self.supabase.table("cost_tracking").select("*").eq(
                 "project_id", project_id
-            ).execute()
+            ).execute())
 
             if not result.data:
                 return {
@@ -713,9 +713,9 @@ class SupabaseProjectManager:
         """Get detailed cost analysis for a project."""
         try:
             # Get all cost records
-            result = self.supabase.table("cost_tracking").select("*").eq(
+            result = await asyncio.to_thread(lambda: self.supabase.table("cost_tracking").select("*").eq(
                 "project_id", project_id
-            ).order("created_at").execute()
+            ).order("created_at").execute())
 
             # Get summary
             summary = await self.get_cost_summary(project_id)
@@ -876,16 +876,16 @@ class SupabaseProjectManager:
         """Save a completed blog."""
         try:
             # Check if already exists
-            existing_result = self.supabase.table("completed_blogs").select("*").eq(
+            existing_result = await asyncio.to_thread(lambda: self.supabase.table("completed_blogs").select("*").eq(
                 "project_id", project_id
-            ).execute()
+            ).execute())
 
             now = datetime.utcnow().isoformat()
 
             if existing_result.data:
                 # Update existing
                 existing = existing_result.data[0]
-                self.supabase.table("completed_blogs").update({
+                await asyncio.to_thread(lambda: self.supabase.table("completed_blogs").update({
                     "title": title,
                     "final_content": content,
                     "word_count": word_count,
@@ -893,10 +893,10 @@ class SupabaseProjectManager:
                     "generation_time_seconds": generation_time,
                     "version": existing.get("version", 1) + 1,
                     "metadata": metadata or {}
-                }).eq("project_id", project_id).execute()
+                }).eq("project_id", project_id).execute())
             else:
                 # Create new
-                self.supabase.table("completed_blogs").insert({
+                await asyncio.to_thread(lambda: self.supabase.table("completed_blogs").insert({
                     "project_id": project_id,
                     "title": title,
                     "final_content": content,
@@ -905,12 +905,12 @@ class SupabaseProjectManager:
                     "generation_time_seconds": generation_time,
                     "metadata": metadata or {},
                     "created_at": now
-                }).execute()
+                }).execute())
 
             # Update project completed_at
-            self.supabase.table("projects").update({
+            await asyncio.to_thread(lambda: self.supabase.table("projects").update({
                 "completed_at": now
-            }).eq("id", project_id).execute()
+            }).eq("id", project_id).execute())
 
             logger.info(f"Saved completed blog for project {project_id}")
             return True
@@ -1021,10 +1021,10 @@ class SupabaseProjectManager:
                 current_metadata.update(metadata)
 
                 # Update project
-                self.supabase.table("projects").update({
+                await asyncio.to_thread(lambda: self.supabase.table("projects").update({
                     "metadata": current_metadata,
                     "updated_at": datetime.utcnow().isoformat()
-                }).eq("id", project_id).execute()
+                }).eq("id", project_id).execute())
 
             return True
 
@@ -1061,7 +1061,7 @@ class SupabaseProjectManager:
                 "created_at": now
             }
 
-            result = self.supabase.table("outline_versions").insert(data).execute()
+            result = await asyncio.to_thread(lambda: self.supabase.table("outline_versions").insert(data).execute())
 
             if not result.data:
                 raise Exception("Failed to save outline version: no data returned")
@@ -1084,9 +1084,9 @@ class SupabaseProjectManager:
             List of outline version dictionaries
         """
         try:
-            result = self.supabase.table("outline_versions").select("*").eq(
+            result = await asyncio.to_thread(lambda: self.supabase.table("outline_versions").select("*").eq(
                 "project_id", project_id
-            ).order("version_number", desc=True).execute()
+            ).order("version_number", desc=True).execute())
 
             versions = []
             for v in result.data:
@@ -1131,7 +1131,7 @@ class SupabaseProjectManager:
                 "created_at": now
             }
 
-            result = self.supabase.table("outline_feedback").insert(data).execute()
+            result = await asyncio.to_thread(lambda: self.supabase.table("outline_feedback").insert(data).execute())
 
             if not result.data:
                 raise Exception("Failed to save outline feedback: no data returned")
@@ -1189,9 +1189,9 @@ class SupabaseProjectManager:
             Latest outline version dict or None if not found
         """
         try:
-            result = self.supabase.table("outline_versions").select("*").eq(
+            result = await asyncio.to_thread(lambda: self.supabase.table("outline_versions").select("*").eq(
                 "project_id", project_id
-            ).order("version_number", desc=True).limit(1).execute()
+            ).order("version_number", desc=True).limit(1).execute())
 
             if not result.data:
                 logger.warning(f"No outline versions found for project {project_id}")
