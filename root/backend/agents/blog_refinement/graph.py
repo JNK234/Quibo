@@ -75,13 +75,13 @@ async def create_refinement_graph() -> StateGraph:
 
     # --- Define Edges with Conditionals ---
     graph.set_entry_point("generate_introduction")
-    graph.add_edge("generate_introduction", "generate_conclusion")
-    graph.add_edge("generate_conclusion", "generate_summary")
-    graph.add_edge("generate_summary", "generate_titles")
-    graph.add_edge("generate_titles", "assemble_draft")
-    graph.add_edge("assemble_draft", "format_draft")
+    graph.add_conditional_edges("generate_introduction", should_continue, {"end_due_to_error": END, "continue": "generate_conclusion"})
+    graph.add_conditional_edges("generate_conclusion", should_continue, {"end_due_to_error": END, "continue": "generate_summary"})
+    graph.add_conditional_edges("generate_summary", should_continue, {"end_due_to_error": END, "continue": "generate_titles"})
+    graph.add_conditional_edges("generate_titles", should_continue, {"end_due_to_error": END, "continue": "assemble_draft"})
+    graph.add_conditional_edges("assemble_draft", should_continue, {"end_due_to_error": END, "continue": "format_draft"})
     # Add validation after formatting
-    graph.add_edge("format_draft", "validate_formatting")
+    graph.add_conditional_edges("format_draft", should_continue, {"end_due_to_error": END, "continue": "validate_formatting"})
     # Conditional retry loop: retry formatting or complete
     graph.add_conditional_edges(
         "validate_formatting",
