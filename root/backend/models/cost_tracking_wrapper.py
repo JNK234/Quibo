@@ -182,7 +182,7 @@ class CostTrackingModel:
                 "model": self.model_name,
                 "input_tokens": input_tokens,
                 "output_tokens": 0,
-                "total_cost": (input_tokens / 1000) *
+                "total_cost": (input_tokens / 1_000_000) *
                             self.token_counter.PRICING.get(self.model_name, {"input": 0.001})["input"],
                 "error": str(e),
                 **call_context
