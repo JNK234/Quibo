@@ -149,7 +149,7 @@ class SupabaseProjectManager:
             logger.error(f"Failed to create project {project_name}: {e}")
             raise
 
-    async def get_project(self, project_id: str) -> Optional[Dict[str, Any]]:
+    async def get_project(self, project_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
         Load project data by ID.
 
@@ -160,7 +160,10 @@ class SupabaseProjectManager:
             Project data dict or None if not found
         """
         try:
-            result = self.supabase.table("projects").select("*").eq("id", project_id).execute()
+            query = self.supabase.table("projects").select("*").eq("id", project_id)
+            if user_id is not None:
+                query = query.eq("user_id", user_id)
+            result = query.execute()
 
             if not result.data:
                 logger.warning(f"Project {project_id} not found")
@@ -185,7 +188,7 @@ class SupabaseProjectManager:
             logger.error(f"Failed to load project {project_id}: {e}")
             return None
 
-    async def get_project_by_name(self, project_name: str) -> Optional[Dict[str, Any]]:
+    async def get_project_by_name(self, project_name: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
         Load project data by name (for backward compatibility).
 
@@ -196,9 +199,12 @@ class SupabaseProjectManager:
             Project data dict or None if not found
         """
         try:
-            result = self.supabase.table("projects").select("*").eq(
+            query = self.supabase.table("projects").select("*").eq(
                 "name", project_name
-            ).eq("status", ProjectStatus.ACTIVE.value).execute()
+            ).eq("status", ProjectStatus.ACTIVE.value)
+            if user_id is not None:
+                query = query.eq("user_id", user_id)
+            result = query.execute()
 
             if not result.data:
                 return None
@@ -221,7 +227,7 @@ class SupabaseProjectManager:
             logger.error(f"Failed to load project by name {project_name}: {e}")
             return None
 
-    async def list_projects(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def list_projects(self, status: Optional[str] = None, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         List all projects, optionally filtered by status.
 
@@ -233,6 +239,8 @@ class SupabaseProjectManager:
         """
         try:
             query = self.supabase.table("projects").select("*")
+            if user_id is not None:
+                query = query.eq("user_id", user_id)
 
             if status:
                 # Support both string and enum values
@@ -261,16 +269,19 @@ class SupabaseProjectManager:
             logger.error(f"Failed to list projects: {e}")
             return []
 
-    async def archive_project(self, project_id: str) -> bool:
+    async def archive_project(self, project_id: str, user_id: Optional[str] = None) -> bool:
         """Archive a project."""
         try:
             async with await self._get_lock(project_id):
                 now = datetime.utcnow().isoformat()
 
-                result = self.supabase.table("projects").update({
+                query = self.supabase.table("projects").update({
                     "status": ProjectStatus.ARCHIVED.value,
                     "archived_at": now
-                }).eq("id", project_id).execute()
+                }).eq("id", project_id)
+                if user_id is not None:
+                    query = query.eq("user_id", user_id)
+                result = query.execute()
 
                 if not result.data:
                     return False
@@ -282,23 +293,32 @@ class SupabaseProjectManager:
             logger.error(f"Failed to archive project {project_id}: {e}")
             return False
 
-    async def delete_project(self, project_id: str, permanent: bool = False) -> bool:
+    async def delete_project(self, project_id: str, permanent: bool = False, user_id: Optional[str] = None) -> bool:
         """Delete or soft-delete a project."""
         try:
             async with await self._get_lock(project_id):
                 # Check if project exists first
-                existing = self.supabase.table("projects").select("id").eq("id", project_id).execute()
+                existing_query = self.supabase.table("projects").select("id").eq("id", project_id)
+                if user_id is not None:
+                    existing_query = existing_query.eq("user_id", user_id)
+                existing = existing_query.execute()
                 if not existing.data:
                     logger.warning(f"Project {project_id} not found for deletion")
                     return False
 
                 if permanent:
-                    result = self.supabase.table("projects").delete().eq("id", project_id).execute()
+                    delete_query = self.supabase.table("projects").delete().eq("id", project_id)
+                    if user_id is not None:
+                        delete_query = delete_query.eq("user_id", user_id)
+                    result = delete_query.execute()
                     logger.info(f"Permanently deleted project {project_id}")
                 else:
-                    result = self.supabase.table("projects").update({
+                    update_query = self.supabase.table("projects").update({
                         "status": ProjectStatus.DELETED.value
-                    }).eq("id", project_id).execute()
+                    }).eq("id", project_id)
+                    if user_id is not None:
+                        update_query = update_query.eq("user_id", user_id)
+                    result = update_query.execute()
                     logger.info(f"Soft deleted project {project_id}")
 
                 # Consistent check: if no data returned, operation failed
@@ -315,7 +335,8 @@ class SupabaseProjectManager:
     # ==================== Milestone Operations ====================
 
     async def save_milestone(self, project_id: str, milestone_type: MilestoneType,
-                            data: Any, metadata: Dict[str, Any] = None) -> bool:
+                            data: Any, metadata: Dict[str, Any] = None,
+                            user_id: Optional[str] = None) -> bool:
         """
         Save a milestone for a project.
 
@@ -331,7 +352,10 @@ class SupabaseProjectManager:
         try:
             async with await self._get_lock(project_id):
                 # Check if project exists
-                project_result = self.supabase.table("projects").select("id").eq("id", project_id).execute()
+                project_query = self.supabase.table("projects").select("id").eq("id", project_id)
+                if user_id is not None:
+                    project_query = project_query.eq("user_id", user_id)
+                project_result = project_query.execute()
                 if not project_result.data:
                     logger.error(f"Project {project_id} not found")
                     return False
@@ -361,9 +385,12 @@ class SupabaseProjectManager:
                     }).execute()
 
                 # Update project's updated_at
-                self.supabase.table("projects").update({
+                project_update_query = self.supabase.table("projects").update({
                     "updated_at": now
-                }).eq("id", project_id).execute()
+                }).eq("id", project_id)
+                if user_id is not None:
+                    project_update_query = project_update_query.eq("user_id", user_id)
+                project_update_query.execute()
 
             logger.info(f"Saved milestone {milestone_type.value} for project {project_id}")
             return True
@@ -453,7 +480,7 @@ class SupabaseProjectManager:
     # ==================== Section Management ====================
 
     async def save_sections(self, project_id: str, sections: List[Dict[str, Any]],
-                            delete_missing: bool = False) -> bool:
+                            delete_missing: bool = False, user_id: Optional[str] = None) -> bool:
         """
         Save sections using upsert for transaction safety.
 
@@ -522,9 +549,12 @@ class SupabaseProjectManager:
 
                 # Update project's updated_at
                 now = datetime.utcnow().isoformat()
-                self.supabase.table("projects").update({
+                project_update_query = self.supabase.table("projects").update({
                     "updated_at": now
-                }).eq("id", project_id).execute()
+                }).eq("id", project_id)
+                if user_id is not None:
+                    project_update_query = project_update_query.eq("user_id", user_id)
+                project_update_query.execute()
 
             logger.info(f"Saved {len(sections)} sections for project {project_id}")
             return True
@@ -602,7 +632,7 @@ class SupabaseProjectManager:
     async def track_cost(self, project_id: str, agent_name: str, operation: str,
                         input_tokens: int, output_tokens: int, cost: float,
                         model_used: str = None, metadata: Dict = None,
-                        duration_seconds: float = None) -> bool:
+                        duration_seconds: float = None, user_id: Optional[str] = None) -> bool:
         """
         Track granular cost per operation.
 
@@ -622,7 +652,7 @@ class SupabaseProjectManager:
         """
         try:
             # Validate project exists before tracking cost
-            project = await self.get_project(project_id)
+            project = await self.get_project(project_id, user_id=user_id)
             if not project:
                 logger.error(f"Cannot track cost for non-existent project: {project_id}")
                 return False
@@ -749,7 +779,7 @@ class SupabaseProjectManager:
 
     # ==================== Resume and Progress ====================
 
-    async def resume_project(self, project_id: str) -> Optional[Dict[str, Any]]:
+    async def resume_project(self, project_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
         Get complete project state for resumption.
 
@@ -761,7 +791,7 @@ class SupabaseProjectManager:
         """
         try:
             # Get project
-            project = await self.get_project(project_id)
+            project = await self.get_project(project_id, user_id=user_id)
             if not project:
                 return None
 
@@ -872,7 +902,8 @@ class SupabaseProjectManager:
 
     async def save_completed_blog(self, project_id: str, title: str, content: str,
                                  word_count: int, total_cost: float,
-                                 generation_time: int, metadata: Dict = None) -> bool:
+                                 generation_time: int, metadata: Dict = None,
+                                 user_id: Optional[str] = None) -> bool:
         """Save a completed blog."""
         try:
             # Check if already exists
@@ -908,9 +939,12 @@ class SupabaseProjectManager:
                 }).execute()
 
             # Update project completed_at
-            self.supabase.table("projects").update({
+            project_update_query = self.supabase.table("projects").update({
                 "completed_at": now
-            }).eq("id", project_id).execute()
+            }).eq("id", project_id)
+            if user_id is not None:
+                project_update_query = project_update_query.eq("user_id", user_id)
+            project_update_query.execute()
 
             logger.info(f"Saved completed blog for project {project_id}")
             return True
@@ -921,7 +955,7 @@ class SupabaseProjectManager:
 
     # ==================== Export Operations ====================
 
-    async def export_project_json(self, project_id: str) -> Optional[Dict[str, Any]]:
+    async def export_project_json(self, project_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
         Export project data in JSON format.
 
@@ -933,14 +967,14 @@ class SupabaseProjectManager:
         """
         try:
             # Get full project state
-            project_state = await self.resume_project(project_id)
+            project_state = await self.resume_project(project_id, user_id=user_id)
             return project_state
 
         except Exception as e:
             logger.error(f"Failed to export project {project_id} as JSON: {e}")
             return None
 
-    async def export_project_markdown(self, project_id: str) -> Optional[str]:
+    async def export_project_markdown(self, project_id: str, user_id: Optional[str] = None) -> Optional[str]:
         """
         Export project data in Markdown format.
 
@@ -952,7 +986,7 @@ class SupabaseProjectManager:
         """
         try:
             # Get full project state
-            project_state = await self.resume_project(project_id)
+            project_state = await self.resume_project(project_id, user_id=user_id)
             if not project_state:
                 return None
 
@@ -986,7 +1020,7 @@ class SupabaseProjectManager:
             logger.error(f"Failed to export project {project_id} as markdown: {e}")
             return None
 
-    async def export_project(self, project_id: str, format: str = "json") -> Optional[Any]:
+    async def export_project(self, project_id: str, format: str = "json", user_id: Optional[str] = None) -> Optional[Any]:
         """
         Export project data in specified format.
 
@@ -998,21 +1032,21 @@ class SupabaseProjectManager:
             Exported data or None on error
         """
         if format == "json":
-            return await self.export_project_json(project_id)
+            return await self.export_project_json(project_id, user_id=user_id)
         elif format == "markdown":
-            return await self.export_project_markdown(project_id)
+            return await self.export_project_markdown(project_id, user_id=user_id)
         else:
             logger.error(f"Unsupported export format: {format}")
             return None
 
     # ==================== Update Metadata ====================
 
-    async def update_metadata(self, project_id: str, metadata: Dict[str, Any]) -> bool:
+    async def update_metadata(self, project_id: str, metadata: Dict[str, Any], user_id: Optional[str] = None) -> bool:
         """Update project metadata."""
         try:
             async with await self._get_lock(project_id):
                 # Get current project
-                project = await self.get_project(project_id)
+                project = await self.get_project(project_id, user_id=user_id)
                 if not project:
                     return False
 
@@ -1021,10 +1055,13 @@ class SupabaseProjectManager:
                 current_metadata.update(metadata)
 
                 # Update project
-                self.supabase.table("projects").update({
+                project_update_query = self.supabase.table("projects").update({
                     "metadata": current_metadata,
                     "updated_at": datetime.utcnow().isoformat()
-                }).eq("id", project_id).execute()
+                }).eq("id", project_id)
+                if user_id is not None:
+                    project_update_query = project_update_query.eq("user_id", user_id)
+                project_update_query.execute()
 
             return True
 
