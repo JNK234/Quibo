@@ -552,10 +552,11 @@ Current Position: Section {state.current_section_index + 1} of {len(getattr(stat
         previous_context = "BLOG PROGRESSION CONTEXT:\nThis is the first section of the blog."
     
     # Extract structural context from content references
+    relevant_content = state.content_mapping.get(section_title, [])
     structural_insights = ""
-    if relevant_headers:
+    if relevant_content:
         # Find references with structural context
-        structured_refs = [ref for ref in relevant_headers if ref.structural_context]
+        structured_refs = [ref for ref in relevant_content if ref.structural_context]
         if structured_refs:
             structural_insights = "Structural insights from content analysis:\n"
             for ref in structured_refs[:3]:  # Limit to top 3
