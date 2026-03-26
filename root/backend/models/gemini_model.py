@@ -65,8 +65,8 @@ class GeminiModel:
             # LangChain expects a list of messages or a string; wrap prompt in HumanMessage for clarity
             response = self.llm.invoke([HumanMessage(content=prompt)])
             logger.debug("Sync invocation successful.")
-            # The response object has a 'content' attribute
-            return response.content
+            # Return the full AIMessage for consistency with other model wrappers
+            return response
         except Exception as e:
             logger.exception(f"Error during synchronous Gemini invoke: {str(e)}")
             raise Exception(f"Gemini API call failed (sync): {str(e)}")
@@ -89,8 +89,8 @@ class GeminiModel:
             # LangChain expects a list of messages or a string; wrap prompt in HumanMessage for clarity
             response = await self.llm.ainvoke([HumanMessage(content=prompt)])
             logger.debug("Async invocation successful.")
-            # The response object has a 'content' attribute
-            return response.content
+            # Return the full AIMessage for consistency with other model wrappers
+            return response
         except Exception as e:
             logger.exception(f"Error during asynchronous Gemini invoke: {str(e)}")
             raise Exception(f"Gemini API call failed (async): {str(e)}")

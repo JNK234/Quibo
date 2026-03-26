@@ -40,6 +40,8 @@ def login_with_google():
     st.markdown("### Sign in to Quibo")
     st.markdown("Use your Google account to access the blogging assistant.")
 
+    oauth_url = st.session_state.get("oauth_url")
+
     if st.button("Sign in with Google", type="primary", use_container_width=True):
         supabase = init_supabase_client()
         try:
@@ -47,27 +49,34 @@ def login_with_google():
             redirect_url = os.getenv("REDIRECT_URL", "http://localhost:8501/callback")
 
             # Start OAuth flow - this returns a URL that we need to open
-            auth_url = supabase.auth.sign_in_with_oauth({
+            auth_response = supabase.auth.sign_in_with_oauth({
                 "provider": "google",
                 "options": {
                     "redirect_to": redirect_url
                 }
             })
 
+            auth_url = None
+            if isinstance(auth_response, dict):
+                auth_url = auth_response.get("url")
+            else:
+                auth_url = getattr(auth_response, "url", None)
+                if auth_url is None and isinstance(auth_response, str):
+                    auth_url = auth_response
+
             if auth_url:
-                st.success("Opening Google sign-in page...")
-                # Open the OAuth URL in a new tab/window
-                st.markdown(f"""
-                <script>
-                window.open('{auth_url}', '_blank');
-                </script>
-                """, unsafe_allow_html=True)
-                st.info("If the page didn't open, click here: ")
-                st.markdown(f"[Continue to Google Sign-In]({auth_url})")
+                st.session_state["oauth_url"] = auth_url
+                oauth_url = auth_url
+                st.success("Continue with Google sign-in using the button below.")
+            else:
+                st.error("Could not generate Google sign-in URL. Please try again.")
 
         except Exception as e:
             logger.error(f"OAuth error: {e}")
             st.error(f"Authentication failed: {str(e)}")
+
+    if oauth_url:
+        st.link_button("Login with Google", oauth_url, use_container_width=True)
 
 def handle_oauth_callback():
     """Handle OAuth callback and extract session."""
