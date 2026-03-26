@@ -20,6 +20,6 @@ class ContentParsingState(CostTrackingMixin):
     chunk_metadata: Optional[List] = None
 
     # Error handling
-    errors: List[str] = []
+    errors: List[str] = Field(default_factory=list)
 
     model_config = {"arbitrary_types_allowed": True}

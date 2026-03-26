@@ -198,6 +198,8 @@ class FileParser:
                 )
                 code_segments.append(code_segment)
         
+        content_graph = self._build_content_graph(main_content, code_segments)
+
         logging.info(f"Extracted {len(code_segments)} code segments")
         return ParsedContent(
             main_content='\n\n'.join(filter(None, main_content)),
