@@ -11,9 +11,9 @@ You are an expert technical writer tasked with creating a compelling introductio
 The full draft of the blog post is provided below.
 
 **Blog Draft:**
-```markdown
+<user_content>
 {blog_draft}
-```
+</user_content>
 
 **Task:**
 Write a professional, engaging introduction paragraph (typically 3-5 sentences) suitable for direct publication.
@@ -35,9 +35,9 @@ You are an expert technical writer tasked with creating a concise and impactful 
 The full draft of the blog post is provided below.
 
 **Blog Draft:**
-```markdown
+<user_content>
 {blog_draft}
-```
+</user_content>
 
 **Task:**
 Write a professional, concise conclusion paragraph (typically 3-5 sentences) suitable for direct publication.
@@ -59,9 +59,9 @@ You are an expert technical writer tasked with creating a concise summary of a b
 The full draft of the blog post is provided below.
 
 **Blog Draft:**
-```markdown
+<user_content>
 {blog_draft}
-```
+</user_content>
 
 **Task:**
 Write a concise summary (target 2-4 sentences) of the entire blog post, suitable for direct use (e.g., meta descriptions, social media previews).
@@ -84,9 +84,9 @@ Create compelling titles that reflect how an expert practitioner would share ins
 You're not creating marketing copy—you're offering genuine insights to fellow practitioners who value substance over style. Your titles should reflect the same conversational authority and strategic clarity found in the best technical writing.
 
 **BLOG POST ANALYSIS:**
-```markdown
+<user_content>
 {blog_draft}
-```
+</user_content>
 
 **QUESTION-BASED COMPARISON PATTERN - PRIMARY APPROACH:**
 
@@ -204,9 +204,9 @@ You are an expert technical editor and Markdown formatter.
 The raw draft of a blog post's main content is provided below.
 
 **Raw Blog Draft Content:**
-```markdown
+<user_content>
 {blog_draft_content}
-```
+</user_content>
 
 **Task:**
 Review and reformat the provided blog draft content to enhance its readability, structure, and overall quality for publication.
@@ -278,9 +278,9 @@ This is a flow/CLARITY improvement task, NOT a shortening or summarization task.
 The output MUST contain ALL the same content as the input, with ADDITIONS ONLY (transitions, clarity improvements).
 
 **Blog Draft:**
-```markdown
+<user_content>
 {blog_draft}
-```
+</user_content>
 
 **YOUR TASK:**
 Improve the draft's clarity and flow while STRICTLY PRESERVING all content.
@@ -320,9 +320,9 @@ STRUCTURE_ANALYSIS_PROMPT = """
 You are an expert technical editor and content architect tasked with analyzing a blog post structure and creating an intelligent formatting plan.
 
 **Blog Draft to Analyze:**
-```markdown
+<user_content>
 {blog_draft}
-```
+</user_content>
 
 **YOUR TASK:**
 Analyze the blog structure and create a detailed formatting plan that will guide the chunked formatting process. Your analysis must be intelligent and context-aware, not cookie-cutter rules.

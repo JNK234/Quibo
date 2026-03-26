@@ -1,7 +1,13 @@
 CONTENT_ANALYSIS_PROMPT = """
 Analyze the following content:
-Notebook: {notebook_content}
-Markdown: {markdown_content}
+<user_content>
+<notebook_content>
+{notebook_content}
+</notebook_content>
+<markdown_content>
+{markdown_content}
+</markdown_content>
+</user_content>
 
 Extract:
 1. Main topics and concepts
