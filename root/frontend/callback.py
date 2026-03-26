@@ -3,6 +3,7 @@
 
 import streamlit as st
 import logging
+import os
 from auth import init_supabase_client, get_current_user
 from pathlib import Path
 from dotenv import load_dotenv
@@ -16,6 +17,9 @@ if ENV_PATH.exists():
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("OAuthCallback")
+
+REDIRECT_URL = os.getenv("REDIRECT_URL", "http://localhost:8501/callback")
+APP_URL = REDIRECT_URL[:-len("/callback")] if REDIRECT_URL.endswith("/callback") else REDIRECT_URL.rstrip("/")
 
 def handle_callback():
     """Handle the OAuth callback."""
@@ -50,20 +54,20 @@ def handle_callback():
 
                 # Redirect to main app after a short delay
                 st.markdown("""
-                <meta http-equiv="refresh" content="2; url=http://localhost:8501">
-                """, unsafe_allow_html=True)
+                <meta http-equiv="refresh" content="2; url={app_url}">
+                """.format(app_url=APP_URL), unsafe_allow_html=True)
 
                 st.warning("If you're not redirected automatically, click here:")
-                st.markdown("[Go to Quibo](http://localhost:8501)")
+                st.markdown(f"[Go to Quibo]({APP_URL})")
 
             else:
                 st.error("❌ No session found. Please try logging in again.")
-                st.markdown("[Back to Login](http://localhost:8501)")
+                st.markdown(f"[Back to Login]({APP_URL})")
 
         except Exception as e:
             logger.error(f"Callback error: {e}")
             st.error(f"❌ Authentication failed: {str(e)}")
-            st.markdown("[Back to Login](http://localhost:8501)")
+            st.markdown(f"[Back to Login]({APP_URL})")
 
 if __name__ == "__main__":
     handle_callback()
